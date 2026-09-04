@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ランダム引換券つくるしょうへいくん</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div class="logo">券</div>
+      <div><p class="eyebrow">INVENTORY COMBINATION TOOL</p><h1>ランダム引換券<br><span>つくるしょうへいくん</span></h1></div>
+    </header>
+
+    <section class="card" id="uploadCard">
+      <div class="step">01</div>
+      <div class="section-body">
+        <h2>在庫CSVを読み込む</h2>
+        <label class="drop" id="dropZone">
+          <input type="file" id="csvFile" accept=".csv,text/csv">
+          <span class="upload-icon">↑</span>
+          <strong>CSVを選択、またはここにドロップ</strong>
+          <small>データはブラウザ内だけで処理されます</small>
+        </label>
+        <p class="file-status" id="fileStatus"></p>
+      </div>
+    </section>
+
+    <section class="card hidden" id="mappingCard">
+      <div class="step">02</div>
+      <div class="section-body">
+        <h2>使用する列を確認</h2>
+        <div class="mapping-grid">
+          <label>商品名<select id="nameColumn"></select></label>
+          <label>組み合わせる数字<select id="valueColumn"></select></label>
+          <label>在庫数<select id="stockColumn"></select></label>
+        </div>
+        <p class="hint">在庫数の列がない場合は「各商品を1個として扱う」を選べます。</p>
+        <button class="secondary" id="applyMapping">この列で在庫を読み込む</button>
+      </div>
+    </section>
+
+    <section class="card hidden" id="searchCard">
+      <div class="step">03</div>
+      <div class="section-body">
+        <h2>基準にする数字を入力</h2>
+        <div class="target-row">
+          <input id="target" type="text" inputmode="numeric" autocomplete="off" placeholder="例：100,000">
+          <button id="findButton">80〜83%の組み合わせを探す</button>
+        </div>
+        <div class="options">
+          <label><input type="checkbox" id="randomize" checked> 候補をランダムに並べる</label>
+          <label>表示件数 <select id="resultLimit"><option>5</option><option selected>10</option><option>20</option></select></label>
+        </div>
+        <p id="inventorySummary" class="hint"></p>
+        <p class="hint">商品は最大2個。「なにかのPSA10」と名称に「BOX」を含む商品は対象外です。</p>
+      </div>
+    </section>
+
+    <section class="results hidden" id="resultsSection">
+      <div class="results-head"><div><p class="eyebrow">RESULT</p><h2>使える組み合わせ</h2></div><button class="ghost" id="copyAll">結果をコピー</button></div>
+      <div id="results"></div>
+    </section>
+  </main>
+  <div class="toast" id="toast">コピーしました</div>
+  <script src="app.js"></script>
+</body>
+</html>
