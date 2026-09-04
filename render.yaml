@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: random-voucher-shohei
+    runtime: static
+    buildCommand: mkdir -p public && cp index.html style.css app.js public/
+    staticPublishPath: ./public
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: Referrer-Policy
+        value: no-referrer
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
