@@ -58,11 +58,9 @@ function toNumber(value) {
 function toStock(value) {
   const source = String(value ?? '').trim();
   if (!source) return 0;
-  // 「fred:84」「東京:3 / 大阪:2」など、保管場所ごとの数量を合算する。
-  const locationCounts = [...source.matchAll(/(?:^|[\s,，/／;；|｜])[^\d:,，/／;；|｜]*[:：]\s*(-?[\d,]+)/g)];
-  if (locationCounts.length) return locationCounts.reduce((sum, match) => sum + Math.max(0, toNumber(match[1]) || 0), 0);
-  const plain = toNumber(source);
-  return Number.isFinite(plain) ? Math.max(0, Math.floor(plain)) : 0;
+  // 保管場所が fred の数量だけを使用し、他の場所や数字だけの値は無視する。
+  const fredCounts = [...source.matchAll(/(?:^|[\s,，/／;；|｜])fred\s*[:：]\s*(\d{1,3}(?:,\d{3})+|\d+)(?=$|[\s,，/／;；|｜])/g)];
+  return fredCounts.reduce((sum, match) => sum + toNumber(match[1]), 0);
 }
 
 function applyMapping() {
