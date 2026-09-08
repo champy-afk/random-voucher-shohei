@@ -97,15 +97,22 @@ function findCombinations(target, limit) {
       const items = i === j
         ? [{...inventory[i],qty:2}]
         : [{...inventory[i],qty:1},{...inventory[j],qty:1}];
-      found.push({items,sum,count:2});
+      const balanceGap = Math.abs(inventory[i].value - inventory[j].value) / sum;
+      found.push({items,sum,count:2,balanceGap});
     }
   }
-  if ($('randomize').checked) {
-    const singles = found.filter(x=>x.count===1).sort(()=>Math.random()-.5);
-    const pairs = found.filter(x=>x.count===2).sort(()=>Math.random()-.5);
-    return [...singles,...pairs].slice(0,limit);
+  const randomize = $('randomize').checked;
+  if (randomize) {
+    for (let i = found.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [found[i], found[j]] = [found[j], found[i]];
+    }
   }
-  return found.sort((a,b) => a.count-b.count || b.sum-a.sum).slice(0,limit);
+  // 1個の候補を優先し、2個の候補は金額比率が5:5に近い順に並べる。
+  // ランダム設定は優先度が同じ候補同士にだけ適用する。
+  return found.sort((a,b) => a.count-b.count
+    || (a.balanceGap ?? 0)-(b.balanceGap ?? 0)
+    || (randomize ? 0 : b.sum-a.sum)).slice(0,limit);
 }
 
 function search() {
