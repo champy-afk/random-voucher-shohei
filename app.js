@@ -82,8 +82,9 @@ function isExcludedName(name) {
 }
 
 function findCombinations(target, limit) {
-  const min = target * .8, max = target * .83, found = [];
-  const inRange = sum => sum >= min - 1e-9 && sum <= max + 1e-9;
+  const found = [];
+  // 83%台のみ。83%は含め、84%は含めない。
+  const inRange = sum => sum * 100 >= target * 83 && sum * 100 < target * 84;
   // まず1個で完結する候補。
   inventory.forEach(item => {
     if (inRange(item.value)) found.push({items:[{...item,qty:1}], sum:item.value, count:1});
@@ -120,11 +121,11 @@ function search() {
   if (!(target > 0)) return alert('0より大きい数字を入力してください。');
   lastResults = findCombinations(target, +$('resultLimit').value);
   const wrap = $('results'); wrap.innerHTML = '';
-  if (!lastResults.length) wrap.innerHTML = '<div class="empty">基準値の80%〜83%に収まる、1〜2個の組み合わせが見つかりませんでした。<br>数字や在庫データを確認してください。</div>';
+  if (!lastResults.length) wrap.innerHTML = '<div class="empty">基準値の83%台（83%以上84%未満）に収まる、1〜2個の組み合わせが見つかりませんでした。<br>数字や在庫データを確認してください。</div>';
   lastResults.forEach((result, i) => {
     const combo = result.items, count = result.count, ratio = result.sum / target * 100;
     const div = document.createElement('div'); div.className = 'result-card';
-    div.innerHTML = `<div class="result-number">${i+1}</div><div class="result-items">${combo.map(x=>`${escapeHTML(x.name)} × ${x.qty}<span class="stock-badge">現在庫 ${x.stock}</span>`).join('<br>')}</div><div class="result-meta">相場合計 ${result.sum.toLocaleString()}<br>${ratio.toFixed(1)}%・${count}個</div>`;
+    div.innerHTML = `<div class="result-number">${i+1}</div><div class="result-items">${combo.map(x=>`${escapeHTML(x.name)} × ${x.qty}<span class="stock-badge">現在庫 ${x.stock}</span>`).join('<br>')}</div><div class="result-meta">相場合計 ${result.sum.toLocaleString()}<br>${(Math.floor(ratio * 10) / 10).toFixed(1)}%・${count}個</div>`;
     wrap.appendChild(div);
   });
   $('resultsSection').classList.remove('hidden');
@@ -132,7 +133,7 @@ function search() {
 }
 
 function escapeHTML(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
-function resultsText(){const target=toNumber($('target').value);return lastResults.map((r,i)=>`候補${i+1}: ${r.items.map(x=>`${x.name} × ${x.qty}［現在庫 ${x.stock}］`).join('、')}（相場合計 ${r.sum} / 基準の${(r.sum/target*100).toFixed(1)}%）`).join('\n')}
+function resultsText(){const target=toNumber($('target').value);return lastResults.map((r,i)=>`候補${i+1}: ${r.items.map(x=>`${x.name} × ${x.qty}［現在庫 ${x.stock}］`).join('、')}（相場合計 ${r.sum} / 基準の${(Math.floor(r.sum/target*1000)/10).toFixed(1)}%）`).join('\n')}
 async function copyAll(){if(!lastResults.length)return;await navigator.clipboard.writeText(resultsText());$('toast').classList.add('show');setTimeout(()=>$('toast').classList.remove('show'),1500)}
 
 $('csvFile').addEventListener('change', e => loadFile(e.target.files[0]));
