@@ -45,6 +45,13 @@
       <div class="step">03</div>
       <div class="section-body">
         <h2>基準にする数字を入力</h2>
+        <label for="percentBand">相場合計の割合</label>
+        <select id="percentBand">
+          <option value="83" selected>83%台（スタンダード・83%以上84%未満）</option>
+          <option value="84">84%台（84%以上85%未満）</option>
+          <option value="85">85%台（85%以上86%未満）</option>
+        </select>
+        <p class="hint">入力した基準値に対する割合を選択してください。</p>
         <div class="target-row">
           <input id="target" type="text" inputmode="numeric" autocomplete="off" placeholder="例：100,000">
           <button id="findButton">83%台の組み合わせを探す</button>

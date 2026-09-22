@@ -81,10 +81,10 @@ function isExcludedName(name) {
   return normalized.includes('なにかのPSA10'.toUpperCase()) || normalized.includes('BOX');
 }
 
-function findCombinations(target, limit) {
+function findCombinations(target, limit, percent = 83) {
   const found = [];
-  // 83%台のみ。83%は含め、84%は含めない。
-  const inRange = sum => sum * 100 >= target * 83 && sum * 100 < target * 84;
+  // 選択した%台のみ。下限は含め、次の%台は含めない。
+  const inRange = sum => sum * 100 >= target * percent && sum * 100 < target * (percent + 1);
   // まず1個で完結する候補。
   inventory.forEach(item => {
     if (inRange(item.value)) found.push({items:[{...item,qty:1}], sum:item.value, count:1});
@@ -116,12 +116,18 @@ function findCombinations(target, limit) {
     || (randomize ? 0 : b.sum-a.sum)).slice(0,limit);
 }
 
+function selectedPercent() {
+  const percent = Number($('percentBand').value);
+  return [83, 84, 85].includes(percent) ? percent : 83;
+}
+
 function search() {
   const target = toNumber($('target').value);
   if (!(target > 0)) return alert('0より大きい数字を入力してください。');
-  lastResults = findCombinations(target, +$('resultLimit').value);
+  const percent = selectedPercent();
+  lastResults = findCombinations(target, +$('resultLimit').value, percent);
   const wrap = $('results'); wrap.innerHTML = '';
-  if (!lastResults.length) wrap.innerHTML = '<div class="empty">基準値の83%台（83%以上84%未満）に収まる、1〜2個の組み合わせが見つかりませんでした。<br>数字や在庫データを確認してください。</div>';
+  if (!lastResults.length) wrap.innerHTML = `<div class="empty">基準値の${percent}%台（${percent}%以上${percent + 1}%未満）に収まる、1〜2個の組み合わせが見つかりませんでした。<br>数字や在庫データを確認してください。</div>`;
   lastResults.forEach((result, i) => {
     const combo = result.items, count = result.count, ratio = result.sum / target * 100;
     const div = document.createElement('div'); div.className = 'result-card';
@@ -142,6 +148,12 @@ const drop=$('dropZone'); ['dragenter','dragover'].forEach(e=>drop.addEventListe
 drop.addEventListener('drop',e=>loadFile(e.dataTransfer.files[0]));
 $('applyMapping').addEventListener('click',applyMapping);
 $('findButton').addEventListener('click',search);
+$('percentBand').addEventListener('change', () => {
+  $('findButton').textContent = selectedPercent() + '%台の組み合わせを探す';
+  lastResults = [];
+  $('results').innerHTML = '';
+  $('resultsSection').classList.add('hidden');
+});
 $('target').addEventListener('input', e => {
   const digits = e.target.value.replace(/[^0-9]/g, '').replace(/^0+(?=\d)/, '');
   e.target.value = digits ? Number(digits).toLocaleString('ja-JP') : '';
