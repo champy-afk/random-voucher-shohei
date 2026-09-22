@@ -131,15 +131,28 @@ function search() {
   lastResults.forEach((result, i) => {
     const combo = result.items, count = result.count, ratio = result.sum / target * 100;
     const div = document.createElement('div'); div.className = 'result-card';
-    div.innerHTML = `<div class="result-number">${i+1}</div><div class="result-items">${combo.map(x=>`${escapeHTML(x.name)} × ${x.qty}<span class="stock-badge">現在庫 ${x.stock}</span>`).join('<br>')}</div><div class="result-meta">相場合計 ${result.sum.toLocaleString()}<br>${(Math.floor(ratio * 10) / 10).toFixed(1)}%・${count}個</div>`;
+    div.innerHTML = `<div class="result-number">${i+1}</div><div class="result-items">${combo.map(x=>`<div>${escapeHTML(x.name)} × ${x.qty}<span class="stock-badge">現在庫 ${x.stock}</span><br><small class="hint">${itemMarketText(x)}</small></div>`).join('')}</div><div class="result-meta">相場合計 ${marketTotalText(result)}<br>${(Math.floor(ratio * 10) / 10).toFixed(1)}%・${count}個</div>`;
     wrap.appendChild(div);
   });
   $('resultsSection').classList.remove('hidden');
   $('resultsSection').scrollIntoView({behavior:'smooth',block:'start'});
 }
 
+function itemMarketText(item) {
+  const unit = item.value.toLocaleString('ja-JP') + '円';
+  return item.qty === 1 ? '相場単価 ' + unit
+    : '相場単価 ' + unit + ' × ' + item.qty + '個 ＝ 小計 ' + (item.value * item.qty).toLocaleString('ja-JP') + '円';
+}
+
+function marketTotalText(result) {
+  const total = result.sum.toLocaleString('ja-JP') + '円';
+  return result.items.length > 1
+    ? result.items.map(item => (item.value * item.qty).toLocaleString('ja-JP') + '円').join(' ＋ ') + ' ＝ ' + total
+    : total;
+}
+
 function escapeHTML(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
-function resultsText(){const target=toNumber($('target').value);return lastResults.map((r,i)=>`候補${i+1}: ${r.items.map(x=>`${x.name} × ${x.qty}［現在庫 ${x.stock}］`).join('、')}（相場合計 ${r.sum} / 基準の${(Math.floor(r.sum/target*1000)/10).toFixed(1)}%）`).join('\n')}
+function resultsText(){const target=toNumber($('target').value);return lastResults.map((r,i)=>`候補${i+1}: ${r.items.map(x=>`${x.name} × ${x.qty}［${itemMarketText(x)}／現在庫 ${x.stock}］`).join('、')}（相場合計 ${marketTotalText(r)} / 基準の${(Math.floor(r.sum/target*1000)/10).toFixed(1)}%）`).join('\n')}
 async function copyAll(){if(!lastResults.length)return;await navigator.clipboard.writeText(resultsText());$('toast').classList.add('show');setTimeout(()=>$('toast').classList.remove('show'),1500)}
 
 $('csvFile').addEventListener('change', e => loadFile(e.target.files[0]));
