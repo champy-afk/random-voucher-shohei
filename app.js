@@ -63,10 +63,35 @@ function toStock(value) {
   return fredCounts.reduce((sum, match) => sum + toNumber(match[1]), 0);
 }
 
+function imageUrlFromCell(value) {
+  try {
+    const url = new URL(String(value ?? '').trim());
+    return ['https:', 'http:'].includes(url.protocol) ? url.href : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+function createProductImage(item) {
+  if (!item.imageUrl) return null;
+  const image = document.createElement('img');
+  image.className = 'product-image';
+  image.alt = item.name;
+  image.width = 56;
+  image.height = 72;
+  image.loading = 'lazy';
+  image.decoding = 'async';
+  image.referrerPolicy = 'no-referrer';
+  image.addEventListener('error', () => image.remove(), {once: true});
+  image.src = item.imageUrl;
+  return image;
+}
+
 function applyMapping() {
   const ni = +$('nameColumn').value, vi = +$('valueColumn').value, si = +$('stockColumn').value;
   const mapped = rows.slice(1).map((r, i) => ({
-    name: (r[ni] || `商品${i + 1}`).trim(), value: toNumber(r[vi]), stock: si < 0 ? 1 : toStock(r[si])
+    name: (r[ni] || `商品${i + 1}`).trim(), value: toNumber(r[vi]), stock: si < 0 ? 1 : toStock(r[si]),
+    imageUrl: imageUrlFromCell(r[13])
   })).filter(x => x.name && Number.isFinite(x.value) && x.value > 0 && Number.isFinite(x.stock) && x.stock > 0);
   inventory = mapped.filter(x => !isExcludedName(x.name));
   excludedCount = mapped.length - inventory.length;
@@ -131,7 +156,11 @@ function search() {
   lastResults.forEach((result, i) => {
     const combo = result.items, count = result.count, ratio = result.sum / target * 100;
     const div = document.createElement('div'); div.className = 'result-card';
-    div.innerHTML = `<div class="result-number">${i+1}</div><div class="result-items">${combo.map(x=>`<div>${escapeHTML(x.name)} × ${x.qty}<span class="stock-badge">現在庫 ${x.stock}</span><br><small class="hint">${itemMarketText(x)}</small></div>`).join('')}</div><div class="result-meta">相場合計 ${marketTotalText(result)}<br>${(Math.floor(ratio * 10) / 10).toFixed(1)}%・${count}個</div>`;
+    div.innerHTML = `<div class="result-number">${i+1}</div><div class="result-items">${combo.map(x=>`<div class="result-item"><div class="product-details">${escapeHTML(x.name)} × ${x.qty}<span class="stock-badge">現在庫 ${x.stock}</span><br><small class="hint">${itemMarketText(x)}</small></div></div>`).join('')}</div><div class="result-meta">相場合計 ${marketTotalText(result)}<br>${(Math.floor(ratio * 10) / 10).toFixed(1)}%・${count}個</div>`;
+    div.querySelectorAll('.result-item').forEach((row, index) => {
+      const image = createProductImage(combo[index]);
+      if (image) row.prepend(image);
+    });
     wrap.appendChild(div);
   });
   $('resultsSection').classList.remove('hidden');
