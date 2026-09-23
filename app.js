@@ -82,9 +82,41 @@ function createProductImage(item) {
   image.loading = 'lazy';
   image.decoding = 'async';
   image.referrerPolicy = 'no-referrer';
-  image.addEventListener('error', () => image.remove(), {once: true});
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'product-image-button';
+  button.setAttribute('aria-label', item.name + 'の画像を拡大');
+  button.title = 'クリック・タップで拡大';
+  button.addEventListener('click', () => openProductImage(item));
+  image.addEventListener('error', () => button.remove(), {once: true});
   image.src = item.imageUrl;
-  return image;
+  button.appendChild(image);
+  return button;
+}
+
+function openProductImage(item) {
+  const url = imageUrlFromCell(item.imageUrl);
+  if (!url) return;
+  const dialog = $('imageDialog');
+  $('imageDialogTitle').textContent = item.name;
+  const image = document.createElement('img');
+  image.className = 'image-preview';
+  image.alt = item.name;
+  image.referrerPolicy = 'no-referrer';
+  image.decoding = 'async';
+  const status = document.createElement('p');
+  status.className = 'hint';
+  status.setAttribute('role', 'status');
+  status.textContent = '画像を読み込み中…';
+  image.addEventListener('load', () => status.remove(), {once: true});
+  image.addEventListener('error', () => {
+    image.remove();
+    status.textContent = '画像を読み込めませんでした。閉じてもう一度お試しください。';
+  }, {once: true});
+  $('imageDialogBody').replaceChildren(status, image);
+  image.src = url;
+  if (!dialog.open) dialog.showModal();
+  document.documentElement.classList.add('image-dialog-open');
 }
 
 function applyMapping() {
@@ -202,3 +234,12 @@ $('target').addEventListener('input', e => {
 });
 $('target').addEventListener('keydown',e=>{if(e.key==='Enter')search()});
 $('copyAll').addEventListener('click',copyAll);
+
+$('imageDialogClose').addEventListener('click', () => $('imageDialog').close());
+$('imageDialog').addEventListener('click', event => {
+  if (event.target === $('imageDialog')) $('imageDialog').close();
+});
+$('imageDialog').addEventListener('close', () => {
+  $('imageDialogBody').replaceChildren();
+  document.documentElement.classList.remove('image-dialog-open');
+});
