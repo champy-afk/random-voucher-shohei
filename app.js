@@ -138,7 +138,50 @@ function isExcludedName(name) {
   return normalized.includes('なにかのPSA10'.toUpperCase()) || normalized.includes('BOX');
 }
 
-function findCombinations(target, limit, percent = 83) {
+let extraSearchLimited = false;
+
+function selectedCounts() {
+  return [1, 2, ...($('includeThree').checked ? [3] : []), ...($('includeFour').checked ? [4] : [])];
+}
+
+function findExtraCombinations(target, limit, percent, count, randomize) {
+  const candidates = inventory.filter(item => item.value * 100 < target * (percent + 1))
+    .slice().sort((a, b) => a.value - b.value);
+  const best = [], chosen = [], used = new Map();
+  let steps = 0;
+  const compare = (a, b) => a.balanceGap - b.balanceGap
+    || (randomize ? a.tie - b.tie : b.sum - a.sum);
+  function visit(start, remaining, sum) {
+    if (++steps > 200000) { extraSearchLimited = true; return; }
+    if (!remaining) {
+      if (sum * 100 < target * percent || sum * 100 >= target * (percent + 1)) return;
+      const items = [...used].map(([index, qty]) => ({...candidates[index], qty}));
+      const result = {items, sum, count,
+        balanceGap: (candidates[chosen[count - 1]].value - candidates[chosen[0]].value) / sum,
+        tie: randomize ? Math.random() : 0};
+      best.push(result); best.sort(compare);
+      if (best.length > limit) best.pop();
+      return;
+    }
+    if (start >= candidates.length || (sum + candidates[candidates.length - 1].value * remaining) * 100 < target * percent) return;
+    for (let i = start; i < candidates.length; i++) {
+      if (++steps > 200000) { extraSearchLimited = true; return; }
+      const item = candidates[i], qty = used.get(i) || 0;
+      if ((sum + item.value * remaining) * 100 >= target * (percent + 1)) break;
+      if (qty + 1 > item.stock) continue;
+      chosen.push(i); used.set(i, qty + 1);
+      visit(i, remaining - 1, sum + item.value);
+      chosen.pop();
+      if (qty) used.set(i, qty); else used.delete(i);
+      if (steps > 200000) return;
+    }
+  }
+  visit(0, count, 0);
+  return best;
+}
+
+function findCombinations(target, limit, percent = 83, counts = [1, 2]) {
+  extraSearchLimited = false;
   const found = [];
   // 選択した%台のみ。下限は含め、次の%台は含めない。
   const inRange = sum => sum * 100 >= target * percent && sum * 100 < target * (percent + 1);
@@ -168,9 +211,11 @@ function findCombinations(target, limit, percent = 83) {
   }
   // 1個の候補を優先し、2個の候補は金額比率が5:5に近い順に並べる。
   // ランダム設定は優先度が同じ候補同士にだけ適用する。
-  return found.sort((a,b) => a.count-b.count
+  const standard = found.sort((a,b) => a.count-b.count
     || (a.balanceGap ?? 0)-(b.balanceGap ?? 0)
     || (randomize ? 0 : b.sum-a.sum)).slice(0,limit);
+  return [...standard, ...[3, 4].filter(count => counts.includes(count))
+    .flatMap(count => findExtraCombinations(target, limit, percent, count, randomize))];
 }
 
 function selectedPercent() {
@@ -182,13 +227,38 @@ function search() {
   const target = toNumber($('target').value);
   if (!(target > 0)) return alert('0より大きい数字を入力してください。');
   const percent = selectedPercent();
-  lastResults = findCombinations(target, +$('resultLimit').value, percent);
+  const counts = selectedCounts();
+  lastResults = findCombinations(target, +$('resultLimit').value, percent, counts);
   const wrap = $('results'); wrap.innerHTML = '';
-  if (!lastResults.length) wrap.innerHTML = `<div class="empty">基準値の${percent}%台（${percent}%以上${percent + 1}%未満）に収まる、1〜2個の組み合わせが見つかりませんでした。<br>数字や在庫データを確認してください。</div>`;
+  if (!lastResults.length) wrap.innerHTML = `<div class="empty">基準値の${percent}%台（${percent}%以上${percent + 1}%未満）に収まる、${counts.join("・")}枚の組み合わせが見つかりませんでした。<br>数字や在庫データを確認してください。</div>`;
+  const hasExtras = counts.length > 2;
+  if (hasExtras) {
+    const notice = document.createElement('p');
+    notice.className = 'hint';
+    notice.textContent = '通常（1〜2枚）と、選択した追加枚数ごとに最大' + $('resultLimit').value + '件を表示します。';
+    if (extraSearchLimited) notice.textContent += ' 追加候補の探索上限に達したため、探索済みの範囲から表示しています。';
+    wrap.appendChild(notice);
+    for (const count of counts.filter(n => n >= 3)) {
+      if (!lastResults.some(result => result.count === count)) {
+        const empty = document.createElement('p');
+        empty.className = 'hint';
+        empty.textContent = count + '枚の候補は' + (extraSearchLimited ? '探索済みの範囲では' : '') + '見つかりませんでした。';
+        wrap.appendChild(empty);
+      }
+    }
+  }
+  let previousGroup = '';
   lastResults.forEach((result, i) => {
+    const group = result.count <= 2 ? '通常（1〜2枚）' : result.count + '枚の組み合わせ';
+    if (hasExtras && group !== previousGroup) {
+      const heading = document.createElement('h3');
+      heading.textContent = group;
+      wrap.appendChild(heading);
+      previousGroup = group;
+    }
     const combo = result.items, count = result.count, ratio = result.sum / target * 100;
     const div = document.createElement('div'); div.className = 'result-card';
-    div.innerHTML = `<div class="result-number">${i+1}</div><div class="result-items">${combo.map(x=>`<div class="result-item"><div class="product-details">${escapeHTML(x.name)} × ${x.qty}<span class="stock-badge">現在庫 ${x.stock}</span><br><small class="hint">${itemMarketText(x)}</small></div></div>`).join('')}</div><div class="result-meta">相場合計 ${marketTotalText(result)}<br>${(Math.floor(ratio * 10) / 10).toFixed(1)}%・${count}個</div>`;
+    div.innerHTML = `<div class="result-number">${i+1}</div><div class="result-items">${combo.map(x=>`<div class="result-item"><div class="product-details">${escapeHTML(x.name)} × ${x.qty}<span class="stock-badge">現在庫 ${x.stock}</span><br><small class="hint">${itemMarketText(x)}</small></div></div>`).join('')}</div><div class="result-meta">相場合計 ${marketTotalText(result)}<br>${(Math.floor(ratio * 10) / 10).toFixed(1)}%・${count}枚</div>`;
     div.querySelectorAll('.result-item').forEach((row, index) => {
       const image = createProductImage(combo[index]);
       if (image) row.prepend(image);
@@ -243,3 +313,9 @@ $('imageDialog').addEventListener('close', () => {
   $('imageDialogBody').replaceChildren();
   document.documentElement.classList.remove('image-dialog-open');
 });
+
+['includeThree', 'includeFour'].forEach(id => $(id).addEventListener('change', () => {
+  lastResults = [];
+  $('results').innerHTML = '';
+  $('resultsSection').classList.add('hidden');
+}));
