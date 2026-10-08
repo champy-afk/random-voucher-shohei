@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ランダム引換券つくるしょうへいくん</title>
+  <title>ランダム引換券つくるしょうへいくん改</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="shell">
     <header>
       <div class="logo">券</div>
-      <div><p class="eyebrow">INVENTORY COMBINATION TOOL</p><h1>ランダム引換券<br><span>つくるしょうへいくん</span></h1></div>
+      <div><p class="eyebrow">INVENTORY COMBINATION TOOL</p><h1>ランダム引換券<br><span>つくるしょうへいくん改</span></h1></div>
     </header>
 
     <section class="card" id="uploadCard">
@@ -66,8 +66,42 @@
         </div>
         <p class="hint">通常は1〜2枚。チェックした枚数の候補を追加し、通常候補・追加枚数ごとに指定件数まで表示します。</p>
         <p id="inventorySummary" class="hint"></p>
-        <p class="hint">同じ商品を複数枚使う場合も、在庫数以内で組み合わせます。「なにかのPSA10」と名称に「BOX」を含む商品は対象外です。</p>
+        <p class="hint">同じ商品は1人につき1枚まで。「なにかのPSA10」と名称に「BOX」を含む商品は対象外です。</p>
       </div>
+    </section>
+
+    <section class="card" id="batchCard">
+      <div class="step">04</div>
+      <div class="section-body">
+        <h2>複数人分をまとめて割り当て</h2>
+        <p class="hint">各人に最大20件の候補を作成します。ドロップダウンで内訳を確認し、チェックで確定してください。確定した全員分で在庫を共有し、在庫不足の候補は選べません。同じ人に同じ商品は入れません。</p>
+        <label class="drop compact-drop">
+          <input type="file" id="peopleFile" accept=".csv,text/csv">
+          <strong>名前・基準coinのCSVを選択</strong>
+          <small>「商品名」の引換券表記や、数値だけの列に対応</small>
+        </label>
+        <p class="file-status" id="peopleStatus" role="status"></p>
+        <div class="mapping-grid hidden" id="peopleMapping">
+          <label>名前の列<select id="personNameColumn"></select></label>
+          <label>基準coinの列<select id="personTargetColumn"></select></label>
+        </div>
+        <p id="batchRules" class="hint">相場合計は83%以上84%未満。割合は上の設定を使用します。</p>
+        <div class="batch-actions">
+          <button id="allocateButton" disabled>各人の候補を作る（最大20件）</button>
+          <button id="localExample" class="ghost hidden">今回のCSVで表示</button>
+        </div>
+        <p id="batchStatus" class="hint" role="status" aria-live="polite">在庫CSVと名前・基準coinのCSVを読み込んでください。</p>
+      </div>
+    </section>
+
+    <section class="results hidden" id="batchResultsSection">
+      <div class="results-head"><div><p class="eyebrow">ALLOCATION</p><h2>各人の候補と確定結果</h2></div></div>
+      <div id="batchSummary" class="batch-summary"></div>
+      <p class="hint">ドロップダウンの変更だけでは確定されません。「この組み合わせで確定」をチェックした人だけCSVに出力します。チェックを外すと在庫が戻ります。</p>
+      <div class="batch-actions"><button id="downloadAllocations" class="ghost" disabled>チェックした組み合わせをCSV保存</button><button id="downloadStock" class="ghost" disabled>確定分の使用数・残在庫CSVを保存</button></div>
+      <label class="filter-label">名前で絞り込み<input type="search" id="personFilter" placeholder="名前を入力"></label>
+      <div id="batchResults"></div>
+      <details class="stock-details"><summary>商品ごとの使用数・残在庫</summary><div class="table-scroll"><table><thead><tr><th scope="col">商品名</th><th scope="col">相場単価</th><th scope="col">読込在庫</th><th scope="col">使用数</th><th scope="col">残在庫</th></tr></thead><tbody id="batchStock"></tbody></table></div></details>
     </section>
 
     <section class="results hidden" id="resultsSection">
@@ -86,5 +120,7 @@
     </div>
   </dialog>
   <script src="app.js"></script>
+  <script src="batch-engine.js"></script>
+  <script src="batch-ui.js"></script>
 </body>
 </html>

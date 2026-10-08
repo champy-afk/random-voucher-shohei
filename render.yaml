@@ -2,7 +2,7 @@ services:
   - type: web
     name: random-voucher-shohei
     runtime: static
-    buildCommand: mkdir -p public && cp index.html style.css app.js public/
+    buildCommand: mkdir -p public && cp index.html style.css app.js batch-ui.js batch-engine.js batch-worker.js public/
     staticPublishPath: ./public
     headers:
       - path: /*

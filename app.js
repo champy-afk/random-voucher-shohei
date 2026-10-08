@@ -32,6 +32,9 @@ function setOptions(select, headers, chosen, allowOne = false) {
 
 async function loadFile(file) {
   if (!file) return;
+  inventory = []; lastResults = [];
+  $('searchCard').classList.add('hidden'); $('resultsSection').classList.add('hidden');
+  if (typeof invalidateBatch === 'function') invalidateBatch();
   const buffer = await file.arrayBuffer();
   let text = new TextDecoder('utf-8').decode(buffer);
   if (text.includes('\uFFFD')) try { text = new TextDecoder('shift-jis').decode(buffer); } catch (_) {}
@@ -120,6 +123,9 @@ function openProductImage(item) {
 }
 
 function applyMapping() {
+  inventory = []; lastResults = [];
+  $('resultsSection').classList.add('hidden');
+  if (typeof invalidateBatch === 'function') invalidateBatch();
   const ni = +$('nameColumn').value, vi = +$('valueColumn').value, si = +$('stockColumn').value;
   const mapped = rows.slice(1).map((r, i) => ({
     name: (r[ni] || `商品${i + 1}`).trim(), value: toNumber(r[vi]), stock: si < 0 ? 1 : toStock(r[si]),
@@ -130,6 +136,7 @@ function applyMapping() {
   if (!inventory.length) return alert('有効な在庫を読み込めませんでした。列の選択とデータを確認してください。');
   $('inventorySummary').textContent = `${inventory.length}種類・合計${inventory.reduce((s,x)=>s+x.stock,0)}個の在庫を使用します（名称条件で${excludedCount}種類を除外）。`;
   $('searchCard').classList.remove('hidden');
+  if (typeof invalidateBatch === 'function') invalidateBatch();
   $('target').focus();
 }
 
@@ -168,9 +175,9 @@ function findExtraCombinations(target, limit, percent, count, randomize) {
       if (++steps > 200000) { extraSearchLimited = true; return; }
       const item = candidates[i], qty = used.get(i) || 0;
       if ((sum + item.value * remaining) * 100 >= target * (percent + 1)) break;
-      if (qty + 1 > item.stock) continue;
+      if (qty || chosen.some(index => candidates[index].name.normalize('NFKC').trim() === item.name.normalize('NFKC').trim())) continue;
       chosen.push(i); used.set(i, qty + 1);
-      visit(i, remaining - 1, sum + item.value);
+      visit(i + 1, remaining - 1, sum + item.value);
       chosen.pop();
       if (qty) used.set(i, qty); else used.delete(i);
       if (steps > 200000) return;
@@ -191,8 +198,8 @@ function findCombinations(target, limit, percent = 83, counts = [1, 2]) {
   });
   // 次に2個の候補。同一商品は在庫が2個以上ある場合だけ使う。
   for (let i = 0; i < inventory.length; i++) {
-    for (let j = i; j < inventory.length; j++) {
-      if (i === j && inventory[i].stock < 2) continue;
+    for (let j = i + 1; j < inventory.length; j++) {
+      if (inventory[i].name.normalize('NFKC').trim() === inventory[j].name.normalize('NFKC').trim()) continue;
       const sum = inventory[i].value + inventory[j].value;
       if (!inRange(sum)) continue;
       const items = i === j
