@@ -345,6 +345,23 @@ $('imageDialog').addEventListener('close', () => {
           if (valid(sum)) found.push({ ids: [i, j], sum, gap: Math.abs(products[i].value - products[j].value) / sum });
         }
       }
+      if (person.target >= 1000000) {
+        const ordered = products.map((p, id) => ({ ...p, id, key: p.name.normalize('NFKC').trim() }))
+          .filter(p => p.stock > 0 && p.value * 100 < person.target * (percent + 1)).sort((a, b) => a.value - b.value);
+        for (let a = 0; a < ordered.length - 2; a++) {
+          for (let b = a + 1; b < ordered.length - 1; b++) {
+            if (ordered[a].key === ordered[b].key) continue;
+            const pair = ordered[a].value + ordered[b].value;
+            if ((pair + ordered[b + 1].value) * 100 >= person.target * (percent + 1)) break;
+            for (let c = b + 1; c < ordered.length; c++) {
+              const sum = pair + ordered[c].value;
+              if (sum * 100 >= person.target * (percent + 1)) break;
+              if (!valid(sum) || ordered[c].key === ordered[a].key || ordered[c].key === ordered[b].key) continue;
+              found.push({ ids: [ordered[a].id, ordered[b].id, ordered[c].id], sum, gap: (ordered[c].value - ordered[a].value) / sum });
+            }
+          }
+        }
+      }
       return found.sort((a, b) => a.ids.length - b.ids.length || a.gap - b.gap || b.sum - a.sum);
     });
     const remaining = products.map(p => p.stock), current = Array(people.length).fill(null);
@@ -373,10 +390,13 @@ $('imageDialog').addEventListener('close', () => {
     best.forEach(combo => combo?.ids.forEach(id => used[id]++));
     if (used.some((n, i) => n > products[i].stock)) throw new Error('在庫検証に失敗しました。');
     return { percent, people: people.map((person, i) => {
-      const options = candidates[i].slice(0, 20);
+      const standard = candidates[i].filter(c => c.ids.length <= 2), triples = candidates[i].filter(c => c.ids.length === 3);
+      const options = person.target >= 1000000 && triples.length
+        ? [...standard.slice(0, 10), ...triples.slice(0, 10)] : standard.slice(0, 20);
+      for (const candidate of candidates[i]) { if (options.length >= 20) break; if (!options.includes(candidate)) options.push(candidate); }
       // Keep the jointly feasible recommendation available even if it ranked below 20.
       if (best[i] && !options.includes(best[i])) options[options.length - 1] = best[i];
-      return { ...person, combo: best[i], candidates: options, choice: best[i] ? options.indexOf(best[i]) : options.length ? 0 : -1, confirmed: false, reason: best[i] ? '' : !candidates[i].length ? '相場範囲内の1〜2枚の候補なし' : limited ? '探索上限までに割当できず' : '全員で在庫を共有すると割当できず' };
+      return { ...person, combo: best[i], candidates: options, choice: best[i] ? options.indexOf(best[i]) : options.length ? 0 : -1, confirmed: false, reason: best[i] ? '' : !candidates[i].length ? `相場範囲内の1〜${person.target >= 1000000 ? 3 : 2}枚の候補なし` : limited ? '探索上限までに割当できず' : '全員で在庫を共有すると割当できず' };
     }), products: products.map((p, i) => ({ ...p, used: used[i], remaining: p.stock - used[i] })), assigned: bestCount, limited, steps };
   }
   function confirmedState(result, excludeIndex = -1) {
@@ -418,7 +438,7 @@ function invalidateBatch() {
   $('downloadAllocations').disabled = true; $('downloadStock').disabled = true;
   $('allocateButton').disabled = !inventory.length || !peopleRows.length;
   const percent = selectedPercent();
-  $('batchRules').textContent = `相場合計は${percent}%以上${percent + 1}%未満。1〜2枚で割り当てます。`;
+  $('batchRules').textContent = `相場合計は${percent}%以上${percent + 1}%未満。通常1〜2種類、100万coin以上は3種類の候補も含めて最大20件です。`;
   $('batchStatus').textContent = inventory.length && peopleRows.length ? 'CSVを確認して、全員分の組み合わせを作ってください。' : '在庫CSVと名前・基準coinのCSVを読み込んでください。';
 }
 async function readPeopleFile(file) {
@@ -573,9 +593,9 @@ $('downloadAllocations').addEventListener('click', () => {
   let state;
   try { state = confirmedState(batchResult); } catch (error) { $('batchStatus').textContent = error.message; return; }
   if (!state.selected.length) return;
-  saveBatchCSV('確定した組み合わせ.csv', [['名前', '元の引換券', '基準coin', '商品1', '商品1相場', '商品2', '商品2相場', '相場合計', '割合_%', '枚数', '結果'], ...state.selected.map(p => {
-    const a = p.combo && batchResult.products[p.combo.ids[0]], b = p.combo && batchResult.products[p.combo.ids[1]];
-    return [p.name, p.original, p.target, a?.name, a?.value, b?.name, b?.value, p.combo.sum, (p.combo.sum / p.target * 100).toFixed(4), p.combo.ids.length, '確定済み'];
+  saveBatchCSV('確定した組み合わせ.csv', [['名前', '元の引換券', '基準coin', '商品1', '商品1相場', '商品2', '商品2相場', '商品3', '商品3相場', '相場合計', '割合_%', '枚数', '結果'], ...state.selected.map(p => {
+    const a = batchResult.products[p.combo.ids[0]], b = batchResult.products[p.combo.ids[1]], c = batchResult.products[p.combo.ids[2]];
+    return [p.name, p.original, p.target, a?.name, a?.value, b?.name, b?.value, c?.name, c?.value, p.combo.sum, (p.combo.sum / p.target * 100).toFixed(4), p.combo.ids.length, '確定済み'];
   })]);
 });
 $('downloadStock').addEventListener('click', () => {
