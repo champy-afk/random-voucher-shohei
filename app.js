@@ -406,7 +406,7 @@ $('imageDialog').addEventListener('close', () => {
   if (typeof module !== 'undefined') module.exports = { allocateBatch, confirmedState, canSelectCandidate };
 })(globalThis);
 
-let peopleRows = [], batchResult = null, batchWorker = null, batchWorkerURL = null;
+let peopleRows = [], batchResult = null, batchWorker = null, batchWorkerURL = null, skippedPeopleCount = 0;
 function stopBatchWorker() {
   batchWorker?.terminate(); batchWorker = null;
   if (batchWorkerURL) URL.revokeObjectURL(batchWorkerURL);
@@ -441,12 +441,15 @@ function setPeopleRows(data, filename) {
 function parsePeople() {
   const ni = +$('personNameColumn').value, ti = +$('personTargetColumn').value;
   if (ni === ti) throw new Error('名前と基準coinは別の列を選んでください。');
-  return peopleRows.slice(1).map((row, i) => {
+  skippedPeopleCount = 0;
+  return peopleRows.slice(1).flatMap((row, i) => {
     const name = (row[ni] || '').trim(), original = (row[ti] || '').trim();
-    const match = original.match(/([\d,，]+)\s*coin/i);
-    const target = match ? toNumber(match[1]) : /^[\d,，\s]+$/.test(original) ? toNumber(original) : NaN;
+    const normalized = original.normalize('NFKC');
+    const match = normalized.match(/(\d+(?:,\d{3})*)\s*coin\b/i);
+    if (!/ランダム景品引換券|【合算】/.test(normalized) || !match) { skippedPeopleCount++; return []; }
+    const target = toNumber(match[1]);
     if (!name || !Number.isSafeInteger(target) || target <= 0) throw new Error(`${i + 2}行目の名前・基準coinを確認してください。`);
-    return { name, target, original };
+    return [{ name, target, original }];
   });
 }
 function runBatch() {
@@ -454,8 +457,9 @@ function runBatch() {
     const people = parsePeople();
     if (!inventory.length) throw new Error('在庫CSVを読み込んでください。');
     invalidateBatch();
+    if (!people.length) { $('batchStatus').textContent = `対象者は0名です。${skippedPeopleCount}行をスキップしました。「ランダム景品引換券」または「【合算】」と数字＋coin表記がある行だけが対象です。`; return; }
     $('allocateButton').disabled = true;
-    $('batchStatus').textContent = `${people.length}名分の組み合わせを探索しています…`;
+    $('batchStatus').textContent = `対象${people.length}名分を探索しています…（対象外${skippedPeopleCount}行をスキップ）`;
     const workerSource = `self.onmessage=({data})=>{try{self.postMessage({result:(${allocateBatch.toString()})(data.products,data.people,data.percent)})}catch(error){self.postMessage({error:error.message})}};`;
     batchWorkerURL = URL.createObjectURL(new Blob([workerSource], { type: 'text/javascript' }));
     batchWorker = new Worker(batchWorkerURL);
@@ -463,6 +467,7 @@ function runBatch() {
       stopBatchWorker(); $('allocateButton').disabled = false;
       if (data.error) { $('batchStatus').textContent = data.error; return; }
       batchResult = data.result;
+      batchResult.skippedCount = skippedPeopleCount;
       $('batchStatus').textContent = '候補を作成しました。各人のドロップダウンで選び、チェックで確定してください。' + (batchResult.limited ? ' おすすめの割り当て探索は上限に達したため、全員分の同時割当は未確認です。' : '');
       renderBatch(); $('batchResultsSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
@@ -473,7 +478,7 @@ function runBatch() {
 function renderBatch() {
   if (!batchResult) return;
   const r = batchResult, state = confirmedState(r), used = state.products.reduce((sum, p) => sum + p.used, 0);
-  $('batchSummary').textContent = `${r.people.length}名 ／ 候補あり ${r.people.filter(p => p.candidates.length).length}名 ／ 確定 ${state.selected.length}名 ／ 未確定 ${r.people.length - state.selected.length}名 ／ 使用 ${used}枚 ／ 相場 ${r.percent}%台`;
+  $('batchSummary').textContent = `対象${r.people.length}名 ／ 対象外${r.skippedCount || 0}行をスキップ ／ 候補あり ${r.people.filter(p => p.candidates.length).length}名 ／ 確定 ${state.selected.length}名 ／ 未確定 ${r.people.length - state.selected.length}名 ／ 使用 ${used}枚 ／ 相場 ${r.percent}%台`;
   $('downloadAllocations').disabled = !state.selected.length; $('downloadStock').disabled = !state.selected.length;
   $('batchResults').replaceChildren();
   const filter = $('personFilter').value.trim();
