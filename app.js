@@ -525,7 +525,7 @@ function renderBatch() {
       });
       summary.appendChild(summaryImages);
       const summaryText = document.createElement('span'); summaryText.className = 'candidate-summary-text';
-      summaryText.textContent = `候補${person.choice + 1}：${combo.ids.map(id => r.products[id].name).join(' ＋ ')} ／ ${combo.sum.toLocaleString('ja-JP')}円`;
+      summaryText.textContent = `候補${person.choice + 1}：${combo.ids.map(id => `${r.products[id].name}（残在庫 ${state.products[id].remaining.toLocaleString('ja-JP')}枚）`).join(' ＋ ')} ／ ${combo.sum.toLocaleString('ja-JP')}円`;
       summary.appendChild(summaryText); dropdown.appendChild(summary);
       const options = document.createElement('div'); options.className = 'image-candidate-options';
       person.candidates.forEach((candidate, choice) => {
@@ -543,7 +543,7 @@ function renderBatch() {
           const p = r.products[id], row = document.createElement('div'); row.className = 'result-item candidate-product';
           const image = createProductImage(p); if (image) row.appendChild(image);
           const text = document.createElement('div'); text.className = 'product-details'; text.textContent = p.name;
-          const value = document.createElement('p'); value.className = 'hint'; value.textContent = `相場単価 ${p.value.toLocaleString('ja-JP')}円`;
+          const value = document.createElement('p'); value.className = 'hint'; value.textContent = `相場単価 ${p.value.toLocaleString('ja-JP')}円 ／ 残在庫 ${state.products[id].remaining.toLocaleString('ja-JP')}枚`;
           text.appendChild(value); row.appendChild(text); option.appendChild(row);
         });
         if (!available) { const reason = document.createElement('p'); reason.className = 'hint'; reason.textContent = '確定済みの他の人と在庫が競合しているため選択できません。'; option.appendChild(reason); }
@@ -560,7 +560,7 @@ function renderBatch() {
         const p = r.products[id], row = document.createElement('div'); row.className = 'result-item';
         const image = createProductImage(p); if (image) row.appendChild(image);
         const detail = document.createElement('div'); detail.className = 'product-details';
-        detail.textContent = `${p.name} × 1`; const value = document.createElement('p'); value.className = 'hint'; value.textContent = `相場単価 ${p.value.toLocaleString('ja-JP')}円`; detail.appendChild(value); row.appendChild(detail); card.appendChild(row);
+        detail.textContent = `${p.name} × 1`; const value = document.createElement('p'); value.className = 'hint'; value.textContent = `相場単価 ${p.value.toLocaleString('ja-JP')}円 ／ 残在庫 ${state.products[id].remaining.toLocaleString('ja-JP')}枚`; detail.appendChild(value); row.appendChild(detail); card.appendChild(row);
       });
       const total = document.createElement('p'); total.className = 'allocation-total'; total.textContent = `相場合計 ${combo.sum.toLocaleString('ja-JP')}円 ／ ${(combo.sum / person.target * 100).toFixed(2)}% ／ ${combo.ids.length}枚`; card.appendChild(total);
     } else { card.classList.add('unassigned'); const reason = document.createElement('p'); reason.textContent = `未割当：${person.reason}`; card.appendChild(reason); }
