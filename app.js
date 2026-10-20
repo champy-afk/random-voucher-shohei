@@ -129,7 +129,7 @@ function applyMapping() {
   const ni = +$('nameColumn').value, vi = +$('valueColumn').value, si = +$('stockColumn').value;
   const mapped = rows.slice(1).map((r, i) => ({
     name: (r[ni] || `商品${i + 1}`).trim(), value: toNumber(r[vi]), stock: si < 0 ? 1 : toStock(r[si]),
-    imageUrl: imageUrlFromCell(r[13])
+    imageUrl: imageUrlFromCell(r[13]), tag: (r[5] || '').trim()
   })).filter(x => x.name && Number.isFinite(x.value) && x.value > 0 && Number.isFinite(x.stock) && x.stock > 0);
   inventory = mapped.filter(x => !isExcludedName(x.name));
   excludedCount = mapped.length - inventory.length;
@@ -267,6 +267,7 @@ function search() {
     const div = document.createElement('div'); div.className = 'result-card';
     div.innerHTML = `<div class="result-number">${i+1}</div><div class="result-items">${combo.map(x=>`<div class="result-item"><div class="product-details">${escapeHTML(x.name)} × ${x.qty}<span class="stock-badge">現在庫 ${x.stock}</span><br><small class="hint">${itemMarketText(x)}</small></div></div>`).join('')}</div><div class="result-meta">相場合計 ${marketTotalText(result)}<br>${(Math.floor(ratio * 10) / 10).toFixed(1)}%・${count}枚</div>`;
     div.querySelectorAll('.result-item').forEach((row, index) => {
+      appendProductTag(row.querySelector('.product-details'), combo[index]);
       const image = createProductImage(combo[index]);
       if (image) row.prepend(image);
     });
@@ -274,6 +275,14 @@ function search() {
   });
   $('resultsSection').classList.remove('hidden');
   $('resultsSection').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function appendProductTag(container, item) {
+  if (!item.tag) return;
+  const tag = document.createElement('p');
+  tag.className = 'hint product-tag';
+  tag.textContent = `タグ：${item.tag}`;
+  container.appendChild(tag);
 }
 
 function itemMarketText(item) {
@@ -543,6 +552,7 @@ function renderBatch() {
           const p = r.products[id], row = document.createElement('div'); row.className = 'result-item candidate-product';
           const image = createProductImage(p); if (image) row.appendChild(image);
           const text = document.createElement('div'); text.className = 'product-details'; text.textContent = p.name;
+          appendProductTag(text, p);
           const value = document.createElement('p'); value.className = 'hint'; value.textContent = `相場単価 ${p.value.toLocaleString('ja-JP')}円 ／ 残在庫 ${state.products[id].remaining.toLocaleString('ja-JP')}枚`;
           text.appendChild(value); row.appendChild(text); option.appendChild(row);
         });
@@ -560,7 +570,7 @@ function renderBatch() {
         const p = r.products[id], row = document.createElement('div'); row.className = 'result-item';
         const image = createProductImage(p); if (image) row.appendChild(image);
         const detail = document.createElement('div'); detail.className = 'product-details';
-        detail.textContent = `${p.name} × 1`; const value = document.createElement('p'); value.className = 'hint'; value.textContent = `相場単価 ${p.value.toLocaleString('ja-JP')}円 ／ 残在庫 ${state.products[id].remaining.toLocaleString('ja-JP')}枚`; detail.appendChild(value); row.appendChild(detail); card.appendChild(row);
+        detail.textContent = `${p.name} × 1`; appendProductTag(detail, p); const value = document.createElement('p'); value.className = 'hint'; value.textContent = `相場単価 ${p.value.toLocaleString('ja-JP')}円 ／ 残在庫 ${state.products[id].remaining.toLocaleString('ja-JP')}枚`; detail.appendChild(value); row.appendChild(detail); card.appendChild(row);
       });
       const total = document.createElement('p'); total.className = 'allocation-total'; total.textContent = `相場合計 ${combo.sum.toLocaleString('ja-JP')}円 ／ ${(combo.sum / person.target * 100).toFixed(2)}% ／ ${combo.ids.length}枚`; card.appendChild(total);
     } else { card.classList.add('unassigned'); const reason = document.createElement('p'); reason.textContent = `未割当：${person.reason}`; card.appendChild(reason); }
