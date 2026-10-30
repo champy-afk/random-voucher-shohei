@@ -148,7 +148,8 @@ function isExcludedName(name) {
 let extraSearchLimited = false;
 
 function selectedCounts() {
-  return [1, 2, ...($('includeThree').checked ? [3] : []), ...($('includeFour').checked ? [4] : [])];
+  const raw = $('combinationCount').value.trim();
+  return raw === '' ? [1, 2] : [Number(raw)];
 }
 
 function findExtraCombinations(target, limit, percent, count, randomize) {
@@ -170,8 +171,11 @@ function findExtraCombinations(target, limit, percent, count, randomize) {
       if (best.length > limit) best.pop();
       return;
     }
-    if (start >= candidates.length || (sum + candidates[candidates.length - 1].value * remaining) * 100 < target * percent) return;
-    for (let i = start; i < candidates.length; i++) {
+    if (candidates.length - start < remaining) return;
+    const minimum = candidates.slice(start, start + remaining).reduce((total, item) => total + item.value, sum);
+    const maximum = candidates.slice(-remaining).reduce((total, item) => total + item.value, sum);
+    if (minimum * 100 >= target * (percent + 1) || maximum * 100 < target * percent) return;
+    for (let i = start; i <= candidates.length - remaining; i++) {
       if (++steps > 200000) { extraSearchLimited = true; return; }
       const item = candidates[i], qty = used.get(i) || 0;
       if ((sum + item.value * remaining) * 100 >= target * (percent + 1)) break;
@@ -189,6 +193,9 @@ function findExtraCombinations(target, limit, percent, count, randomize) {
 
 function findCombinations(target, limit, percent = 83, counts = [1, 2]) {
   extraSearchLimited = false;
+  if (counts.length === 1 && counts[0] >= 3) {
+    return findExtraCombinations(target, limit, percent, counts[0], $('randomize').checked);
+  }
   const found = [];
   // 選択した%台のみ。下限は含め、次の%台は含めない。
   const inRange = sum => sum * 100 >= target * percent && sum * 100 < target * (percent + 1);
@@ -218,7 +225,7 @@ function findCombinations(target, limit, percent = 83, counts = [1, 2]) {
   }
   // 1個の候補を優先し、2個の候補は金額比率が5:5に近い順に並べる。
   // ランダム設定は優先度が同じ候補同士にだけ適用する。
-  const standard = found.sort((a,b) => a.count-b.count
+  const standard = found.filter(result => counts.includes(result.count)).sort((a,b) => a.count-b.count
     || (a.balanceGap ?? 0)-(b.balanceGap ?? 0)
     || (randomize ? 0 : b.sum-a.sum)).slice(0,limit);
   return [...standard, ...[3, 4].filter(count => counts.includes(count))
@@ -235,14 +242,15 @@ function search() {
   if (!(target > 0)) return alert('0より大きい数字を入力してください。');
   const percent = selectedPercent();
   const counts = selectedCounts();
+  if (counts.some(count => !Number.isSafeInteger(count) || count < 1)) return alert('組み合わせ枚数は1以上の整数を入力してください。');
   lastResults = findCombinations(target, +$('resultLimit').value, percent, counts);
   const wrap = $('results'); wrap.innerHTML = '';
   if (!lastResults.length) wrap.innerHTML = `<div class="empty">基準値の${percent}%台（${percent}%以上${percent + 1}%未満）に収まる、${counts.join("・")}枚の組み合わせが見つかりませんでした。<br>数字や在庫データを確認してください。</div>`;
-  const hasExtras = counts.length > 2;
+  const hasExtras = counts.some(count => count >= 3);
   if (hasExtras) {
     const notice = document.createElement('p');
     notice.className = 'hint';
-    notice.textContent = '通常（1〜2枚）と、選択した追加枚数ごとに最大' + $('resultLimit').value + '件を表示します。';
+    notice.textContent = counts.join('・') + '枚の組み合わせを最大' + $('resultLimit').value + '件を表示します。';
     if (extraSearchLimited) notice.textContent += ' 追加候補の探索上限に達したため、探索済みの範囲から表示しています。';
     wrap.appendChild(notice);
     for (const count of counts.filter(n => n >= 3)) {
@@ -330,11 +338,11 @@ $('imageDialog').addEventListener('close', () => {
   document.documentElement.classList.remove('image-dialog-open');
 });
 
-['includeThree', 'includeFour'].forEach(id => $(id).addEventListener('change', () => {
+$('combinationCount').addEventListener('input', () => {
   lastResults = [];
   $('results').innerHTML = '';
   $('resultsSection').classList.add('hidden');
-}));
+});
 
 /* BUNDLED BATCH FEATURES */
 /* Shared by the browser worker and local verification. No stock is mutated. */
