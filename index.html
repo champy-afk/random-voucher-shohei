@@ -37,6 +37,11 @@
           <label>在庫数<select id="stockColumn"></select></label>
         </div>
         <p class="hint">在庫数の列がない場合は「各商品を1個として扱う」を選べます。</p>
+        <fieldset id="storageLocationField" class="hidden">
+          <legend>使用する保管場所</legend>
+          <div id="storageLocations" class="storage-locations"></div>
+          <p class="hint">複数選択できます。選んだ場所の在庫を合計します。変更後は下のボタンで在庫を読み込み直してください。</p>
+        </fieldset>
         <button class="secondary" id="applyMapping">この列で在庫を読み込む</button>
       </div>
     </section>

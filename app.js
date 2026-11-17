@@ -49,6 +49,7 @@ async function loadFile(file) {
   setOptions($('valueColumn'), h, valueGuess);
   const stockGuess = guess(h, ['保管場所別在庫','在庫数','在庫','数量','stock','個数'], 6);
   setOptions($('stockColumn'), h, stockGuess, true);
+  refreshLocations();
   $('fileStatus').textContent = `${file.name}（${rows.length - 1}件）を読み込みました`;
   $('mappingCard').classList.remove('hidden');
 }
@@ -58,12 +59,42 @@ function toNumber(value) {
   return Number.isFinite(n) ? n : NaN;
 }
 
+function locationStocks(value) {
+  const stocks = new Map();
+  const pattern = /(?:^|[,，/／;；|｜\r\n])\s*([^:：,，/／;；|｜\r\n]+?)\s*[:：]\s*(\d{1,3}(?:,\d{3})+|\d+)(?=$|[\s,，/／;；|｜])/g;
+  for (const match of String(value ?? '').matchAll(pattern)) {
+    const name = match[1].trim();
+    stocks.set(name, (stocks.get(name) || 0) + toNumber(match[2]));
+  }
+  return stocks;
+}
+function selectedLocations() {
+  return [...$('storageLocations').querySelectorAll('input:checked')].map(input => input.value);
+}
+function refreshLocations() {
+  const si = +$('stockColumn').value;
+  const names = [...new Set(rows.slice(1).flatMap(row => [...locationStocks(row[si]).keys()]))];
+  $('storageLocations').replaceChildren();
+  $('storageLocationField').classList.toggle('hidden', !names.length || si < 0);
+  for (const name of names) {
+    const label = document.createElement('label'), input = document.createElement('input');
+    input.type = 'checkbox'; input.value = name;
+    input.checked = names.includes('fred') ? name === 'fred' : true;
+    label.append(input, document.createTextNode(' ' + name));
+    $('storageLocations').appendChild(label);
+  }
+}
 function toStock(value) {
+  const stocks = locationStocks(value);
+  if (stocks.size) return selectedLocations().reduce((sum, name) => sum + (stocks.get(name) || 0), 0);
   const source = String(value ?? '').trim();
-  if (!source) return 0;
-  // 保管場所が fred の数量だけを使用し、他の場所や数字だけの値は無視する。
-  const fredCounts = [...source.matchAll(/(?:^|[\s,，/／;；|｜])fred\s*[:：]\s*(\d{1,3}(?:,\d{3})+|\d+)(?=$|[\s,，/／;；|｜])/g)];
-  return fredCounts.reduce((sum, match) => sum + toNumber(match[1]), 0);
+  return /^\d+(?:,\d{3})*$/.test(source) ? toNumber(source) : 0;
+}
+function invalidateInventory() {
+  inventory = []; lastResults = [];
+  $('searchCard').classList.add('hidden');
+  $('resultsSection').classList.add('hidden');
+  if (typeof invalidateBatch === 'function') invalidateBatch();
 }
 
 function imageUrlFromCell(value) {
@@ -123,7 +154,7 @@ function openProductImage(item) {
 }
 
 function applyMapping() {
-  inventory = []; lastResults = [];
+  invalidateInventory();
   $('resultsSection').classList.add('hidden');
   if (typeof invalidateBatch === 'function') invalidateBatch();
   const ni = +$('nameColumn').value, vi = +$('valueColumn').value, si = +$('stockColumn').value;
@@ -315,6 +346,9 @@ const drop=$('dropZone'); ['dragenter','dragover'].forEach(e=>drop.addEventListe
 ['dragleave','drop'].forEach(e=>drop.addEventListener(e,x=>{x.preventDefault();drop.classList.remove('over')}));
 drop.addEventListener('drop',e=>loadFile(e.dataTransfer.files[0]));
 $('applyMapping').addEventListener('click',applyMapping);
+$('stockColumn').addEventListener('change', () => { refreshLocations(); invalidateInventory(); });
+['nameColumn', 'valueColumn'].forEach(id => $(id).addEventListener('change', invalidateInventory));
+$('storageLocations').addEventListener('change', invalidateInventory);
 $('findButton').addEventListener('click',search);
 $('percentBand').addEventListener('change', () => {
   $('findButton').textContent = selectedPercent() + '%台の組み合わせを探す';
