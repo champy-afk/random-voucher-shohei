@@ -385,6 +385,7 @@ $('combinationCount').addEventListener('input', () => {
     if (![83, 84, 85].includes(percent)) throw new Error('割合を確認してください。');
     if (products.some(p => !Number.isFinite(p.value) || p.value <= 0 || !Number.isSafeInteger(p.stock) || p.stock < 0)) throw new Error('在庫データが不正です。');
     if (people.some(p => !Number.isSafeInteger(p.target) || p.target <= 0)) throw new Error('基準coinは正の整数にしてください。');
+    let candidateLimited = false;
     const candidates = people.map(person => {
       const found = [], valid = sum => sum * 100 >= person.target * percent && sum * 100 < person.target * (percent + 1);
       for (let i = 0; i < products.length; i++) {
@@ -411,6 +412,40 @@ $('combinationCount').addEventListener('input', () => {
               found.push({ ids: [ordered[a].id, ordered[b].id, ordered[c].id], sum, gap: (ordered[c].value - ordered[a].value) / sum });
             }
           }
+        }
+      }
+      // Increase the count only when the usual candidates are absent.
+      if (!found.length) {
+        const ordered = products.map((p, id) => ({ ...p, id, key: p.name.normalize('NFKC').trim() }))
+          .filter(p => p.stock > 0 && p.value * 100 < person.target * (percent + 1))
+          .sort((a, b) => a.value - b.value);
+        const prefix = [0];
+        ordered.forEach(p => prefix.push(prefix[prefix.length - 1] + p.value));
+        let attempts = 0;
+        const lower = person.target * percent / 100, upper = person.target * (percent + 1) / 100;
+        const ids = [], names = new Set();
+        function explore(start, left, sum) {
+          if (++attempts > maxSteps) { candidateLimited = true; return; }
+          if (!left) {
+            if (valid(sum)) found.push({ ids: ids.slice(), sum, gap: (Math.max(...ids.map(id => products[id].value)) - Math.min(...ids.map(id => products[id].value))) / sum });
+            return;
+          }
+          if (ordered.length - start < left || sum + prefix[start + left] - prefix[start] >= upper || sum + prefix[ordered.length] - prefix[ordered.length - left] < lower) return;
+          for (let i = start; i <= ordered.length - left; i++) {
+            const p = ordered[i];
+            if (sum + p.value * left >= upper) break;
+            if (names.has(p.key)) continue;
+            ids.push(p.id); names.add(p.key);
+            explore(i + 1, left - 1, sum + p.value);
+            names.delete(p.key); ids.pop();
+            if (found.length >= 20 || attempts > maxSteps) return;
+          }
+        }
+        const maxCount = new Set(ordered.map(p => p.key)).size;
+        for (let count = person.target >= 1000000 ? 4 : 3; count <= maxCount; count++) {
+          if (prefix[count] >= upper) break;
+          explore(0, count, 0);
+          if (found.length || attempts > maxSteps) break;
         }
       }
       return found.sort((a, b) => a.ids.length - b.ids.length || a.gap - b.gap || b.sum - a.sum);
@@ -447,8 +482,8 @@ $('combinationCount').addEventListener('input', () => {
       for (const candidate of candidates[i]) { if (options.length >= 20) break; if (!options.includes(candidate)) options.push(candidate); }
       // Keep the jointly feasible recommendation available even if it ranked below 20.
       if (best[i] && !options.includes(best[i])) options[options.length - 1] = best[i];
-      return { ...person, combo: best[i], candidates: options, choice: best[i] ? options.indexOf(best[i]) : options.length ? 0 : -1, confirmed: false, reason: best[i] ? '' : !candidates[i].length ? `相場範囲内の1〜${person.target >= 1000000 ? 3 : 2}枚の候補なし` : limited ? '探索上限までに割当できず' : '全員で在庫を共有すると割当できず' };
-    }), products: products.map((p, i) => ({ ...p, used: used[i], remaining: p.stock - used[i] })), assigned: bestCount, limited, steps };
+      return { ...person, combo: best[i], candidates: options, choice: best[i] ? options.indexOf(best[i]) : options.length ? 0 : -1, confirmed: false, reason: best[i] ? '' : !candidates[i].length ? candidateLimited ? '候補探索が上限に達しました。候補なしとは断定できません' : '枚数を増やしても相場範囲内の候補なし' : limited ? '探索上限までに割当できず' : '全員で在庫を共有すると割当できず' };
+    }), products: products.map((p, i) => ({ ...p, used: used[i], remaining: p.stock - used[i] })), assigned: bestCount, limited: limited || candidateLimited, steps };
   }
   function confirmedState(result, excludeIndex = -1) {
     const used = result.products.map(() => 0), selected = [];
@@ -489,7 +524,7 @@ function invalidateBatch() {
   $('downloadAllocations').disabled = true; $('downloadStock').disabled = true;
   $('allocateButton').disabled = !inventory.length || !peopleRows.length;
   const percent = selectedPercent();
-  $('batchRules').textContent = `相場合計は${percent}%以上${percent + 1}%未満。通常1〜2種類、100万coin以上は3種類の候補も含めて最大20件です。`;
+  $('batchRules').textContent = `相場合計は${percent}%以上${percent + 1}%未満。通常1〜2種類、100万coin以上は3種類も探索。候補がない人は枚数を増やし、最大20件を表示します。`;
   $('batchStatus').textContent = inventory.length && peopleRows.length ? 'CSVを確認して、全員分の組み合わせを作ってください。' : '在庫CSVと名前・基準coinのCSVを読み込んでください。';
 }
 async function readPeopleFile(file) {
@@ -539,7 +574,7 @@ function runBatch() {
       if (data.error) { $('batchStatus').textContent = data.error; return; }
       batchResult = data.result;
       batchResult.skippedCount = skippedPeopleCount;
-      $('batchStatus').textContent = '候補を作成しました。各人のドロップダウンで選び、チェックで確定してください。' + (batchResult.limited ? ' おすすめの割り当て探索は上限に達したため、全員分の同時割当は未確認です。' : '');
+      $('batchStatus').textContent = '候補を作成しました。各人のドロップダウンで選び、チェックで確定してください。' + (batchResult.limited ? ' 候補または割り当ての探索上限に達しました。候補や全員分の同時割当を見つけきれていない場合があります。' : '');
       renderBatch(); $('batchResultsSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
     batchWorker.onerror = () => { stopBatchWorker(); $('allocateButton').disabled = false; $('batchStatus').textContent = '探索を開始できませんでした。ページを再読み込みしてください。'; };
@@ -645,9 +680,14 @@ $('downloadAllocations').addEventListener('click', () => {
   let state;
   try { state = confirmedState(batchResult); } catch (error) { $('batchStatus').textContent = error.message; return; }
   if (!state.selected.length) return;
-  saveBatchCSV('確定した組み合わせ.csv', [['名前', '元の引換券', '基準coin', '商品1', '商品1相場', '商品2', '商品2相場', '商品3', '商品3相場', '相場合計', '割合_%', '枚数', '結果'], ...state.selected.map(p => {
-    const a = batchResult.products[p.combo.ids[0]], b = batchResult.products[p.combo.ids[1]], c = batchResult.products[p.combo.ids[2]];
-    return [p.name, p.original, p.target, a?.name, a?.value, b?.name, b?.value, c?.name, c?.value, p.combo.sum, (p.combo.sum / p.target * 100).toFixed(4), p.combo.ids.length, '確定済み'];
+  const count = Math.max(3, ...state.selected.map(p => p.combo.ids.length));
+  const columns = Array.from({ length: count }, (_, i) => ['商品' + (i + 1), '商品' + (i + 1) + '相場']).flat();
+  saveBatchCSV('確定した組み合わせ.csv', [['名前', '元の引換券', '基準coin', ...columns, '相場合計', '割合_%', '枚数', '結果'], ...state.selected.map(p => {
+    const items = Array.from({ length: count }, (_, i) => {
+      const product = batchResult.products[p.combo.ids[i]];
+      return [product?.name, product?.value];
+    }).flat();
+    return [p.name, p.original, p.target, ...items, p.combo.sum, (p.combo.sum / p.target * 100).toFixed(4), p.combo.ids.length, '確定済み'];
   })]);
 });
 $('downloadStock').addEventListener('click', () => {
