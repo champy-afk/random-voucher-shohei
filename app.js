@@ -385,6 +385,13 @@ $('combinationCount').addEventListener('input', () => {
     if (![83, 84, 85].includes(percent)) throw new Error('割合を確認してください。');
     if (products.some(p => !Number.isFinite(p.value) || p.value <= 0 || !Number.isSafeInteger(p.stock) || p.stock < 0)) throw new Error('在庫データが不正です。');
     if (people.some(p => !Number.isSafeInteger(p.target) || p.target <= 0)) throw new Error('基準coinは正の整数にしてください。');
+    // Balance price spread against stock abundance; a large spread lowers priority.
+    const stockOrder = (a, b, stock) => {
+      const counts = combo => combo.ids.map(id => stock[id]).sort((x, y) => x - y);
+      const ac = counts(a), bc = counts(b);
+      return bc[0] / (1 + 4 * b.gap) - ac[0] / (1 + 4 * a.gap) || a.gap - b.gap || bc.reduce((x,y)=>x+y,0) / bc.length - ac.reduce((x,y)=>x+y,0) / ac.length || a.ids.length - b.ids.length || a.gap - b.gap || b.sum - a.sum;
+    };
+    const initialStock = products.map(p => p.stock);
     let candidateLimited = false;
     const candidates = people.map(person => {
       const found = [], valid = sum => sum * 100 >= person.target * percent && sum * 100 < person.target * (percent + 1);
@@ -427,7 +434,11 @@ $('combinationCount').addEventListener('input', () => {
         function explore(start, left, sum) {
           if (++attempts > maxSteps) { candidateLimited = true; return; }
           if (!left) {
-            if (valid(sum)) found.push({ ids: ids.slice(), sum, gap: (Math.max(...ids.map(id => products[id].value)) - Math.min(...ids.map(id => products[id].value))) / sum });
+            if (valid(sum)) {
+              found.push({ ids: ids.slice(), sum, gap: (Math.max(...ids.map(id => products[id].value)) - Math.min(...ids.map(id => products[id].value))) / sum });
+              found.sort((a,b) => stockOrder(a,b,initialStock));
+              if (found.length > 200) found.pop();
+            }
             return;
           }
           if (ordered.length - start < left || sum + prefix[start + left] - prefix[start] >= upper || sum + prefix[ordered.length] - prefix[ordered.length - left] < lower) return;
@@ -438,7 +449,7 @@ $('combinationCount').addEventListener('input', () => {
             ids.push(p.id); names.add(p.key);
             explore(i + 1, left - 1, sum + p.value);
             names.delete(p.key); ids.pop();
-            if (found.length >= 20 || attempts > maxSteps) return;
+            if (attempts > maxSteps) return;
           }
         }
         const maxCount = new Set(ordered.map(p => p.key)).size;
@@ -448,7 +459,7 @@ $('combinationCount').addEventListener('input', () => {
           if (found.length || attempts > maxSteps) break;
         }
       }
-      return found.sort((a, b) => a.ids.length - b.ids.length || a.gap - b.gap || b.sum - a.sum);
+      return found.sort((a, b) => stockOrder(a, b, initialStock));
     });
     const remaining = products.map(p => p.stock), current = Array(people.length).fill(null);
     let best = current.slice(), bestCount = 0, steps = 0, limited = false;
@@ -463,6 +474,7 @@ $('combinationCount').addEventListener('input', () => {
         if (!options || available.length < options.length) { index = i; options = available; }
       }
       const next = todo.filter(i => i !== index);
+      options.sort((a, b) => stockOrder(a, b, remaining));
       for (const combo of options) {
         combo.ids.forEach(id => remaining[id]--); current[index] = combo;
         visit(next, count + 1);
@@ -476,12 +488,7 @@ $('combinationCount').addEventListener('input', () => {
     best.forEach(combo => combo?.ids.forEach(id => used[id]++));
     if (used.some((n, i) => n > products[i].stock)) throw new Error('在庫検証に失敗しました。');
     return { percent, people: people.map((person, i) => {
-      const standard = candidates[i].filter(c => c.ids.length <= 2), triples = candidates[i].filter(c => c.ids.length === 3);
-      const options = person.target >= 1000000 && triples.length
-        ? [...standard.slice(0, 10), ...triples.slice(0, 10)] : standard.slice(0, 20);
-      for (const candidate of candidates[i]) { if (options.length >= 20) break; if (!options.includes(candidate)) options.push(candidate); }
-      // Keep the jointly feasible recommendation available even if it ranked below 20.
-      if (best[i] && !options.includes(best[i])) options[options.length - 1] = best[i];
+      const options = best[i] ? [best[i]] : [];
       return { ...person, combo: best[i], candidates: options, choice: best[i] ? options.indexOf(best[i]) : options.length ? 0 : -1, confirmed: false, reason: best[i] ? '' : !candidates[i].length ? candidateLimited ? '候補探索が上限に達しました。候補なしとは断定できません' : '枚数を増やしても相場範囲内の候補なし' : limited ? '探索上限までに割当できず' : '全員で在庫を共有すると割当できず' };
     }), products: products.map((p, i) => ({ ...p, used: used[i], remaining: p.stock - used[i] })), assigned: bestCount, limited: limited || candidateLimited, steps };
   }
@@ -524,7 +531,7 @@ function invalidateBatch() {
   $('downloadAllocations').disabled = true; $('downloadStock').disabled = true;
   $('allocateButton').disabled = !inventory.length || !peopleRows.length;
   const percent = selectedPercent();
-  $('batchRules').textContent = `相場合計は${percent}%以上${percent + 1}%未満。通常1〜2種類、100万coin以上は3種類も探索。候補がない人は枚数を増やし、最大20件を表示します。`;
+  $('batchRules').textContent = `相場合計は${percent}%以上${percent + 1}%未満。在庫数とカード同士の相場の近さを考慮して1人1つ割り当てます。通常1〜2種類、100万coin以上は3種類も探索。候補がない人は枚数を増やします。`;
   $('batchStatus').textContent = inventory.length && peopleRows.length ? 'CSVを確認して、全員分の組み合わせを作ってください。' : '在庫CSVと名前・基準coinのCSVを読み込んでください。';
 }
 async function readPeopleFile(file) {
@@ -574,18 +581,22 @@ function runBatch() {
       if (data.error) { $('batchStatus').textContent = data.error; return; }
       batchResult = data.result;
       batchResult.skippedCount = skippedPeopleCount;
-      $('batchStatus').textContent = '候補を作成しました。各人のドロップダウンで選び、チェックで確定してください。' + (batchResult.limited ? ' 候補または割り当ての探索上限に達しました。候補や全員分の同時割当を見つけきれていない場合があります。' : '');
+      $('batchStatus').textContent = '在庫が多いカードを優先し、全員で在庫を超えない組み合わせを1人1つ作成しました。各カードの相場が近くなるように調整しています。そのままCSV保存できます。' + (batchResult.limited ? ' 候補または割り当ての探索上限に達しました。候補や全員分の同時割当を見つけきれていない場合があります。' : '');
       renderBatch(); $('batchResultsSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
     batchWorker.onerror = () => { stopBatchWorker(); $('allocateButton').disabled = false; $('batchStatus').textContent = '探索を開始できませんでした。ページを再読み込みしてください。'; };
     batchWorker.postMessage({ products: inventory, people, percent: selectedPercent() });
   } catch (error) { stopBatchWorker(); $('allocateButton').disabled = !inventory.length || !peopleRows.length; $('batchStatus').textContent = error.message; }
 }
+function allocationState(result) {
+  // Validate all proposed assignments together before displaying or exporting.
+  return confirmedState({ ...result, people: result.people.map(person => ({ ...person, confirmed: Boolean(person.combo) })) });
+}
 function renderBatch() {
   if (!batchResult) return;
-  const r = batchResult, state = confirmedState(r), used = state.products.reduce((sum, p) => sum + p.used, 0);
-  $('batchSummary').textContent = `対象${r.people.length}名 ／ 対象外${r.skippedCount || 0}行をスキップ ／ 候補あり ${r.people.filter(p => p.candidates.length).length}名 ／ 確定 ${state.selected.length}名 ／ 未確定 ${r.people.length - state.selected.length}名 ／ 使用 ${used}枚 ／ 相場 ${r.percent}%台`;
-  $('downloadAllocations').disabled = !state.selected.length; $('downloadStock').disabled = !state.selected.length;
+  const r = batchResult, state = allocationState(r), used = state.products.reduce((sum, p) => sum + p.used, 0);
+  $('batchSummary').textContent = `対象${r.people.length}名 ／ 対象外${r.skippedCount || 0}行をスキップ ／ 候補あり ${r.people.filter(p => p.candidates.length).length}名 ／ 割当 ${state.selected.length}名 ／ 未割当 ${r.people.length - state.selected.length}名 ／ 使用 ${used}枚 ／ 相場 ${r.percent}%台`;
+  $('downloadAllocations').disabled = !r.people.length; $('downloadStock').disabled = !state.selected.length;
   $('batchResults').replaceChildren();
   const filter = $('personFilter').value.trim();
   r.people.forEach((person, personIndex) => {
@@ -598,51 +609,6 @@ function renderBatch() {
     card.appendChild(meta);
     const combo = person.candidates[person.choice];
     if (combo) {
-      const controls = document.createElement('div'); controls.className = 'candidate-controls';
-      const label = document.createElement('p'); label.className = 'candidate-label'; label.textContent = `組み合わせ候補（${person.candidates.length}件）`;
-      controls.appendChild(label);
-      const dropdown = document.createElement('details'); dropdown.className = 'image-candidate-dropdown';
-      const summary = document.createElement('summary'); summary.id = `candidate-${personIndex}`;
-      const summaryImages = document.createElement('span'); summaryImages.className = 'candidate-thumbnails';
-      combo.ids.forEach(id => {
-        const p = r.products[id];
-        if (!p.imageUrl) return;
-        const image = document.createElement('img'); image.className = 'candidate-thumbnail'; image.src = p.imageUrl; image.alt = p.name; image.loading = 'lazy'; image.referrerPolicy = 'no-referrer'; image.addEventListener('error', () => image.remove()); summaryImages.appendChild(image);
-      });
-      summary.appendChild(summaryImages);
-      const summaryText = document.createElement('span'); summaryText.className = 'candidate-summary-text';
-      summaryText.textContent = `候補${person.choice + 1}：${combo.ids.map(id => `${r.products[id].name}（残在庫 ${state.products[id].remaining.toLocaleString('ja-JP')}枚）`).join(' ＋ ')} ／ ${combo.sum.toLocaleString('ja-JP')}円`;
-      summary.appendChild(summaryText); dropdown.appendChild(summary);
-      const options = document.createElement('div'); options.className = 'image-candidate-options';
-      person.candidates.forEach((candidate, choice) => {
-        const available = canSelectCandidate(r, personIndex, choice);
-        const recommended = person.combo && candidate.ids.join(',') === person.combo.ids.join(',');
-        const option = document.createElement('div'); option.className = 'image-candidate-option';
-        if (choice === person.choice) option.classList.add('selected');
-        if (!available) option.classList.add('unavailable');
-        const pickLabel = document.createElement('label'); pickLabel.className = 'candidate-pick';
-        const radio = document.createElement('input'); radio.type = 'radio'; radio.name = `person-candidate-${personIndex}`; radio.id = `candidate-option-${personIndex}-${choice}`; radio.value = String(choice); radio.checked = choice === person.choice; radio.disabled = !available;
-        radio.addEventListener('change', () => { if (radio.checked) updateSelection(personIndex, choice, person.confirmed, summary.id); });
-        const title = document.createElement('span'); title.textContent = `候補${choice + 1}${recommended ? '・おすすめ' : ''} ／ ${candidate.sum.toLocaleString('ja-JP')}円 ／ ${(candidate.sum / person.target * 100).toFixed(2)}% ／ ${candidate.ids.length}枚`;
-        pickLabel.append(radio, title); option.appendChild(pickLabel);
-        candidate.ids.forEach(id => {
-          const p = r.products[id], row = document.createElement('div'); row.className = 'result-item candidate-product';
-          const image = createProductImage(p); if (image) row.appendChild(image);
-          const text = document.createElement('div'); text.className = 'product-details'; text.textContent = p.name;
-          appendProductTag(text, p);
-          const value = document.createElement('p'); value.className = 'hint'; value.textContent = `相場単価 ${p.value.toLocaleString('ja-JP')}円 ／ 残在庫 ${state.products[id].remaining.toLocaleString('ja-JP')}枚`;
-          text.appendChild(value); row.appendChild(text); option.appendChild(row);
-        });
-        if (!available) { const reason = document.createElement('p'); reason.className = 'hint'; reason.textContent = '確定済みの他の人と在庫が競合しているため選択できません。'; option.appendChild(reason); }
-        options.appendChild(option);
-      });
-      dropdown.appendChild(options); controls.appendChild(dropdown);
-      const checkLabel = document.createElement('label'); checkLabel.className = 'confirm-choice';
-      const check = document.createElement('input'); check.type = 'checkbox'; check.id = `confirm-${personIndex}`; check.checked = person.confirmed;
-      check.disabled = !person.confirmed && !canSelectCandidate(r, personIndex, person.choice);
-      check.addEventListener('change', () => updateSelection(personIndex, person.choice, check.checked, check.id));
-      checkLabel.append(check, document.createTextNode('この組み合わせで確定')); controls.appendChild(checkLabel); card.appendChild(controls);
-      const status = document.createElement('p'); status.className = 'selection-status'; status.textContent = person.confirmed ? '確定済み・CSV出力対象' : check.disabled ? 'この候補は在庫不足です。他の候補を選ぶか、他の人の確定を外してください。' : '未確定・チェックするとCSV出力対象になります。'; card.appendChild(status);
       combo.ids.forEach(id => {
         const p = r.products[id], row = document.createElement('div'); row.className = 'result-item';
         const image = createProductImage(p); if (image) row.appendChild(image);
@@ -661,15 +627,6 @@ function renderBatch() {
   });
   $('batchResultsSection').classList.remove('hidden');
 }
-function updateSelection(personIndex, choice, confirmed, focusId) {
-  const person = batchResult.people[personIndex], previous = { choice: person.choice, confirmed: person.confirmed };
-  try {
-    if (!canSelectCandidate(batchResult, personIndex, choice)) throw new Error('他の人の確定分と在庫が競合しています。別の候補を選んでください。');
-    person.choice = choice; person.confirmed = confirmed; confirmedState(batchResult);
-    $('batchStatus').textContent = `${person.name}さんの組み合わせを${confirmed ? '確定' : '未確定に変更'}しました。`;
-  } catch (error) { Object.assign(person, previous); $('batchStatus').textContent = error.message; }
-  renderBatch(); $(focusId)?.focus();
-}
 function saveBatchCSV(filename, rows) {
   const csv = '\uFEFF' + rows.map(row => row.map(value => '"' + String(value ?? '').replaceAll('"', '""') + '"').join(',')).join('\r\n') + '\r\n';
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
@@ -678,23 +635,24 @@ function saveBatchCSV(filename, rows) {
 $('downloadAllocations').addEventListener('click', () => {
   if (!batchResult) return;
   let state;
-  try { state = confirmedState(batchResult); } catch (error) { $('batchStatus').textContent = error.message; return; }
-  if (!state.selected.length) return;
+  try { state = allocationState(batchResult); } catch (error) { $('batchStatus').textContent = error.message; return; }
+  if (!batchResult.people.length) return;
   const count = Math.max(3, ...state.selected.map(p => p.combo.ids.length));
   const columns = Array.from({ length: count }, (_, i) => ['商品' + (i + 1), '商品' + (i + 1) + '相場']).flat();
-  saveBatchCSV('確定した組み合わせ.csv', [['名前', '元の引換券', '基準coin', ...columns, '相場合計', '割合_%', '枚数', '結果'], ...state.selected.map(p => {
+  saveBatchCSV('組み合わせ候補.csv', [['名前', '元の引換券', '基準coin', ...columns, '相場合計', '割合_%', '枚数', '結果'], ...batchResult.people.map(p => {
+    if (!p.combo) return [p.name, p.original, p.target, ...Array(count * 2).fill(''), '', '', 0, '候補なし'];
     const items = Array.from({ length: count }, (_, i) => {
       const product = batchResult.products[p.combo.ids[i]];
       return [product?.name, product?.value];
     }).flat();
-    return [p.name, p.original, p.target, ...items, p.combo.sum, (p.combo.sum / p.target * 100).toFixed(4), p.combo.ids.length, '確定済み'];
+    return [p.name, p.original, p.target, ...items, p.combo.sum, (p.combo.sum / p.target * 100).toFixed(4), p.combo.ids.length, '割当済み'];
   })]);
 });
 $('downloadStock').addEventListener('click', () => {
   if (!batchResult) return;
   try {
-    const state = confirmedState(batchResult);
-    if (state.selected.length) saveBatchCSV('確定分の使用数と残在庫.csv', [['商品名', '相場単価', '読込在庫', '使用数', '残在庫'], ...state.products.map(p => [p.name, p.value, p.stock, p.used, p.remaining])]);
+    const state = allocationState(batchResult);
+    if (state.selected.length) saveBatchCSV('組み合わせの使用数と残在庫.csv', [['商品名', '相場単価', '読込在庫', '使用数', '残在庫'], ...state.products.map(p => [p.name, p.value, p.stock, p.used, p.remaining])]);
   } catch (error) { $('batchStatus').textContent = error.message; }
 });
 $('peopleFile').addEventListener('change', e => readPeopleFile(e.target.files[0]).catch(error => { $('batchStatus').textContent = error.message; }));
