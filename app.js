@@ -396,17 +396,17 @@ $('combinationCount').addEventListener('input', () => {
     const candidates = people.map(person => {
       const found = [], valid = sum => sum * 100 >= person.target * percent && sum * 100 < person.target * (percent + 1);
       for (let i = 0; i < products.length; i++) {
-        if (!products[i].stock) continue;
+        if (!initialStock[i]) continue;
         if (valid(products[i].value)) found.push({ ids: [i], sum: products[i].value, gap: 0 });
         for (let j = i + 1; j < products.length; j++) {
-          if (!products[j].stock || products[i].name.normalize('NFKC').trim() === products[j].name.normalize('NFKC').trim()) continue;
+          if (!initialStock[j] || products[i].name.normalize('NFKC').trim() === products[j].name.normalize('NFKC').trim()) continue;
           const sum = products[i].value + products[j].value;
           if (valid(sum)) found.push({ ids: [i, j], sum, gap: Math.abs(products[i].value - products[j].value) / sum });
         }
       }
       if (person.target >= 1000000) {
         const ordered = products.map((p, id) => ({ ...p, id, key: p.name.normalize('NFKC').trim() }))
-          .filter(p => p.stock > 0 && p.value * 100 < person.target * (percent + 1)).sort((a, b) => a.value - b.value);
+          .filter(p => initialStock[p.id] > 0 && p.value * 100 < person.target * (percent + 1)).sort((a, b) => a.value - b.value);
         for (let a = 0; a < ordered.length - 2; a++) {
           for (let b = a + 1; b < ordered.length - 1; b++) {
             if (ordered[a].key === ordered[b].key) continue;
@@ -424,7 +424,7 @@ $('combinationCount').addEventListener('input', () => {
       // Increase the count only when the usual candidates are absent.
       if (!found.length) {
         const ordered = products.map((p, id) => ({ ...p, id, key: p.name.normalize('NFKC').trim() }))
-          .filter(p => p.stock > 0 && p.value * 100 < person.target * (percent + 1))
+          .filter(p => initialStock[p.id] > 0 && p.value * 100 < person.target * (percent + 1))
           .sort((a, b) => a.value - b.value);
         const prefix = [0];
         ordered.forEach(p => prefix.push(prefix[prefix.length - 1] + p.value));
@@ -528,6 +528,7 @@ function stopBatchWorker() {
 function invalidateBatch() {
   stopBatchWorker(); batchResult = null;
   $('batchResultsSection').classList.add('hidden');
+  $('printBatch').disabled = true;
   $('downloadAllocations').disabled = true; $('downloadStock').disabled = true;
   $('allocateButton').disabled = !inventory.length || !peopleRows.length;
   const percent = selectedPercent();
@@ -596,6 +597,7 @@ function renderBatch() {
   if (!batchResult) return;
   const r = batchResult, state = allocationState(r), used = state.products.reduce((sum, p) => sum + p.used, 0);
   $('batchSummary').textContent = `対象${r.people.length}名 ／ 対象外${r.skippedCount || 0}行をスキップ ／ 候補あり ${r.people.filter(p => p.candidates.length).length}名 ／ 割当 ${state.selected.length}名 ／ 未割当 ${r.people.length - state.selected.length}名 ／ 使用 ${used}枚 ／ 相場 ${r.percent}%台`;
+  $('printBatch').disabled = !r.people.length;
   $('downloadAllocations').disabled = !r.people.length; $('downloadStock').disabled = !state.selected.length;
   $('batchResults').replaceChildren();
   const filter = $('personFilter').value.trim();
@@ -671,3 +673,133 @@ if (['localhost', '127.0.0.1'].includes(location.hostname) && new URLSearchParam
     } catch (error) { $('batchStatus').textContent = error.message; }
   });
 }
+
+/* A4 print view: keep each complete combination on one page. */
+function planPrintPages(heights, pageHeight, gap = 6) {
+  const pages = [];
+  let page = [], total = 0;
+  const finish = () => {
+    if (!page.length) return;
+    const scale = Math.min(1, (pageHeight - gap * (page.length - 1)) / total);
+    pages.push(page.map(height => ({ scale, height: height * scale })));
+    page = []; total = 0;
+  };
+  for (const height of heights) {
+    if (!(height > 0) || !(pageHeight > 0)) throw new Error('印刷サイズを確認してください。');
+    // Slightly shrink a whole page when that avoids a large unused area.
+    if (page.length && (total + height) * 0.85 + gap * page.length > pageHeight) finish();
+    page.push(height); total += height;
+    if (height > pageHeight) finish();
+  }
+  finish();
+  return pages;
+}
+function printCombinations(mode) {
+  let records;
+  try {
+    if (mode === 'batch') {
+      if (!batchResult) return;
+      allocationState(batchResult); // Refuse output if shared inventory is invalid.
+      records = batchResult.people.map(person => ({
+        title: person.name, target: person.target,
+        sum: person.combo?.sum,
+        items: (person.combo?.ids || []).map(id => ({ ...batchResult.products[id], qty: 1 })),
+        reason: person.reason || '候補なし'
+      }));
+    } else {
+      records = lastResults.map((result, i) => ({
+        title: '候補 ' + (i + 1), target: toNumber($('target').value), sum: result.sum, items: result.items
+      }));
+    }
+    if (!records.length) return;
+  } catch (error) { alert(error.message); return; }
+  const button = $(mode === 'batch' ? 'printBatch' : 'printSingle');
+  button.disabled = true;
+  const frame = document.createElement('iframe');
+  frame.title = 'A4 PDF出力';
+  frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:210mm;height:297mm;border:0';
+  document.body.appendChild(frame);
+  const doc = frame.contentDocument;
+  doc.open();
+  doc.write(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>組み合わせ一覧</title><style>
+    @page { size:A4 portrait; margin:0; }
+    * { box-sizing:border-box; }
+    html,body { margin:0; padding:0; background:#fff; color:#182333; font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif; }
+    .page { width:210mm; height:297mm; padding:6mm; break-after:page; page-break-after:always; overflow:hidden; }
+    .page:last-child { break-after:auto; page-break-after:auto; }
+    .content { width:198mm; height:285mm; }
+    .slot { width:100%; break-inside:avoid; page-break-inside:avoid; margin-bottom:6px; }
+    .combo { width:198mm; padding:10px; border:1px solid #9da9b8; border-radius:8px; background:white; transform-origin:top left; }
+    h2 { margin:0 0 3px; font-size:16px; overflow-wrap:anywhere; }
+    .meta { margin:0 0 6px; color:#425168; font-size:12px; }
+    .item { display:flex; gap:8px; padding:5px 0; border-top:1px solid #e1e5eb; align-items:center; }
+    img { width:40px; height:55px; object-fit:contain; flex:none; }
+    .detail { flex:1; min-width:0; font-size:13px; line-height:1.5; overflow-wrap:anywhere; }
+    .meta.high-value { color:#d00000; font-weight:bold; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .product-name-row { display:flex; align-items:center; gap:8px; }
+    .product-name { min-width:0; overflow-wrap:anywhere; }
+    .card-check { display:block; width:4mm; height:4mm; border:1.5px solid #182333; flex:0 0 4mm; }
+    .price { font-size:12px; margin-top:4px; }
+    .total { margin:5px 0 0; border-top:1px solid #9da9b8; padding-top:5px; font-weight:bold; font-size:14px; }
+  </style></head><body></body></html>`);
+  doc.close();
+  const money = value => value.toLocaleString('ja-JP');
+  const element = (tag, text, className) => {
+    const el = doc.createElement(tag); if (text !== undefined) el.textContent = text;
+    if (className) el.className = className; return el;
+  };
+  const cards = records.map(record => {
+    const card = element('article', undefined, 'combo');
+    card.appendChild(element('h2', record.title));
+    card.appendChild(element('p', '基準 ' + money(record.target) + 'coin', record.target >= 100000 ? 'meta high-value' : 'meta'));
+    record.items.forEach(item => {
+      const row = element('div', undefined, 'item');
+      if (item.imageUrl) {
+        const img = element('img'); img.alt = ''; img.referrerPolicy = 'no-referrer';
+        img.addEventListener('error', () => img.remove(), { once:true }); img.src = item.imageUrl; row.appendChild(img);
+      }
+      const detail = element('div', undefined, 'detail');
+      const nameRow = element('div', undefined, 'product-name-row');
+      nameRow.appendChild(element('span', item.name + ' × ' + item.qty, 'product-name'));
+      nameRow.appendChild(element('span', undefined, 'card-check'));
+      detail.appendChild(nameRow);
+      if (item.tag) detail.appendChild(element('div', 'タグ：' + item.tag));
+      detail.appendChild(element('div', '相場単価 ' + money(item.value) + '円 ／ 小計 ' + money(item.value * item.qty) + '円', 'price'));
+      row.appendChild(detail); card.appendChild(row);
+    });
+    card.appendChild(element('p', record.items.length ? '相場合計 ' + money(record.sum) + '円 ／ ' + (record.sum / record.target * 100).toFixed(2) + '% ／ ' + record.items.reduce((n,item) => n + item.qty,0) + '枚' : '候補なし：' + record.reason, 'total'));
+    doc.body.appendChild(card);
+    return card;
+  });
+  const finish = async () => {
+    try {
+      await Promise.race([
+        Promise.all([...doc.images].map(img => img.complete ? Promise.resolve() : new Promise(resolve => {
+          img.addEventListener('load', resolve, { once:true }); img.addEventListener('error', resolve, { once:true });
+        }))), new Promise(resolve => setTimeout(resolve, 4000))
+      ]);
+      await doc.fonts.ready;
+      // Slow images are omitted so they cannot change the layout after measurement.
+      [...doc.images].filter(img => !img.complete).forEach(img => img.remove());
+      const probe = element('div', undefined, 'content'); doc.body.appendChild(probe);
+      const pageHeight = probe.getBoundingClientRect().height; probe.remove();
+      const plans = planPrintPages(cards.map(card => card.getBoundingClientRect().height), pageHeight - 1);
+      let index = 0;
+      for (const plan of plans) {
+        const page = element('section', undefined, 'page');
+        const content = element('div', undefined, 'content'); page.appendChild(content); doc.body.appendChild(page);
+        for (const placement of plan) {
+          const slot = element('div', undefined, 'slot'); slot.style.height = placement.height + 'px';
+          const card = cards[index++]; card.style.transform = 'scale(' + placement.scale + ')';
+          slot.appendChild(card); content.appendChild(slot);
+        }
+      }
+      frame.contentWindow.addEventListener('afterprint', () => { frame.remove(); }, { once:true });
+      frame.contentWindow.focus(); frame.contentWindow.print();
+    } catch (error) { frame.remove(); alert('PDF出力を開始できませんでした：' + error.message); }
+    finally { button.disabled = false; }
+  };
+  finish();
+}
+$('printSingle').addEventListener('click', () => printCombinations('single'));
+$('printBatch').addEventListener('click', () => printCombinations('batch'));

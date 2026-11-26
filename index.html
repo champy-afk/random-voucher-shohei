@@ -90,7 +90,7 @@
         </div>
         <p id="batchRules" class="hint">相場合計は83%以上84%未満。割合は上の設定を使用します。</p>
         <div class="batch-actions">
-          <button id="allocateButton" disabled>各人の候補を作る（最大20件）</button>
+          <button id="allocateButton" disabled>全員分の組み合わせを作る</button>
           <button id="localExample" class="ghost hidden">今回のCSVで表示</button>
         </div>
         <p id="batchStatus" class="hint" role="status" aria-live="polite">在庫CSVと名前・基準coinのCSVを読み込んでください。</p>
@@ -101,15 +101,15 @@
       <div class="results-head"><div><p class="eyebrow">ALLOCATION</p><h2>各人の組み合わせ</h2></div></div>
       <div id="batchSummary" class="batch-summary"></div>
       <p class="hint">対象者全員をCSVに出力します。割り当てできなかった人は「候補なし」と記載します。名前の絞り込みに関係なく全員分を保存します。</p>
-      <div class="batch-actions"><button id="downloadAllocations" class="ghost" disabled>組み合わせ候補をCSV保存</button><button id="downloadStock" class="ghost" disabled>使用数・残在庫CSVを保存</button></div>
+      <div class="batch-actions"><button id="printBatch" class="ghost" disabled>A4 PDF出力</button><button id="downloadAllocations" class="ghost" disabled>組み合わせ候補をCSV保存</button><button id="downloadStock" class="ghost" disabled>使用数・残在庫CSVを保存</button></div>
       <label class="filter-label">名前で絞り込み<input type="search" id="personFilter" placeholder="名前を入力"></label>
       <div id="batchResults"></div>
       <details class="stock-details"><summary>商品ごとの使用数・残在庫</summary><div class="table-scroll"><table><thead><tr><th scope="col">商品名</th><th scope="col">相場単価</th><th scope="col">読込在庫</th><th scope="col">使用数</th><th scope="col">残在庫</th></tr></thead><tbody id="batchStock"></tbody></table></div></details>
     </section>
 
     <section class="results hidden" id="resultsSection">
-      <div class="results-head"><div><p class="eyebrow">RESULT</p><h2>使える組み合わせ</h2></div><button class="ghost" id="copyAll">結果をコピー</button></div>
-      <div id="results"></div>
+      <div class="results-head"><div><p class="eyebrow">RESULT</p><h2>使える組み合わせ</h2></div><button class="ghost" id="printSingle">A4 PDF出力</button><button class="ghost" id="copyAll">結果をコピー</button></div>
+      <p class="hint">PDF出力では印刷先を「PDFに保存」にしてください。組み合わせごとに改ページを調整し、大きい組み合わせは1ページに縮小します。</p><div id="results"></div>
     </section>
   </main>
   <div class="toast" id="toast">コピーしました</div>
