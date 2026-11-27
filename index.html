@@ -32,11 +32,11 @@
       <div class="section-body">
         <h2>使用する列を確認</h2>
         <div class="mapping-grid">
-          <label>商品名<select id="nameColumn"></select></label>
-          <label>組み合わせる数字<select id="valueColumn"></select></label>
-          <label>在庫数<select id="stockColumn"></select></label>
+          <label>商品名<select id="nameColumn" disabled></select></label>
+          <label>組み合わせる数字<select id="valueColumn" disabled></select></label>
+          <label>在庫数<select id="stockColumn" disabled></select></label>
         </div>
-        <p class="hint">在庫数の列がない場合は「各商品を1個として扱う」を選べます。</p>
+        <p class="hint">使用する列は固定です。「管理名称」「現在相場（スニダン直近取引）」「保管場所別在庫」のヘッダーがないCSVは読み込めません。</p>
         <fieldset id="storageLocationField" class="hidden">
           <legend>使用する保管場所</legend>
           <div id="storageLocations" class="storage-locations"></div>

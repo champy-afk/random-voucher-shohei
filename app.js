@@ -30,9 +30,20 @@ function setOptions(select, headers, chosen, allowOne = false) {
   select.value = String(chosen);
 }
 
+function requiredInventoryColumns(headers) {
+  const required = { name: '管理名称', value: '現在相場（スニダン直近取引）', stock: '保管場所別在庫' };
+  const normalized = headers.map(header => header.trim());
+  const missing = Object.values(required).filter(header => !normalized.includes(header));
+  if (missing.length) throw new Error('必要なヘッダーがありません：' + missing.join('、'));
+  const duplicated = Object.values(required).filter(header => normalized.filter(value => value === header).length > 1);
+  if (duplicated.length) throw new Error('同じヘッダーが複数あります：' + duplicated.join('、'));
+  return Object.fromEntries(Object.entries(required).map(([key, header]) => [key, normalized.indexOf(header)]));
+}
 async function loadFile(file) {
   if (!file) return;
-  inventory = []; lastResults = [];
+  rows = []; inventory = []; lastResults = [];
+  $('mappingCard').classList.add('hidden');
+  $('fileStatus').textContent = '';
   $('searchCard').classList.add('hidden'); $('resultsSection').classList.add('hidden');
   if (typeof invalidateBatch === 'function') invalidateBatch();
   const buffer = await file.arrayBuffer();
@@ -41,14 +52,20 @@ async function loadFile(file) {
   rows = parseCSV(text);
   if (rows.length < 2) return alert('データ行のあるCSVを選択してください。');
   const h = rows[0].map(v => v.trim());
-  setOptions($('nameColumn'), h, guess(h, ['商品名','品名','名称','name','アイテム'], 0));
-  const snkrdunkColumn = h.findIndex(header => header.trim() === '現在相場（スニダン直近取引）');
-  const valueGuess = snkrdunkColumn >= 0
-    ? snkrdunkColumn
-    : guess(h, ['スニダン直近取引','直近取引','現在相場','相場','数字','金額','価格','ポイント','value','単価'], 9);
-  setOptions($('valueColumn'), h, valueGuess);
-  const stockGuess = guess(h, ['保管場所別在庫','在庫数','在庫','数量','stock','個数'], 6);
-  setOptions($('stockColumn'), h, stockGuess, true);
+  let columns;
+  try { columns = requiredInventoryColumns(h); }
+  catch (error) {
+    rows = [];
+    $('fileStatus').textContent = error.message;
+    return alert(error.message);
+  }
+  for (const [id, index] of [['nameColumn', columns.name], ['valueColumn', columns.value], ['stockColumn', columns.stock]]) {
+    const select = $(id);
+    select.innerHTML = '';
+    select.add(new Option(h[index], index));
+    select.value = String(index);
+    select.disabled = true;
+  }
   refreshLocations();
   $('fileStatus').textContent = `${file.name}（${rows.length - 1}件）を読み込みました`;
   $('mappingCard').classList.remove('hidden');
@@ -157,9 +174,12 @@ function applyMapping() {
   invalidateInventory();
   $('resultsSection').classList.add('hidden');
   if (typeof invalidateBatch === 'function') invalidateBatch();
-  const ni = +$('nameColumn').value, vi = +$('valueColumn').value, si = +$('stockColumn').value;
+  let columns;
+  try { columns = requiredInventoryColumns(rows[0] || []); }
+  catch (error) { $('fileStatus').textContent = error.message; return alert(error.message); }
+  const { name: ni, value: vi, stock: si } = columns;
   const mapped = rows.slice(1).map((r, i) => ({
-    name: (r[ni] || `商品${i + 1}`).trim(), value: toNumber(r[vi]), stock: si < 0 ? 1 : toStock(r[si]),
+    name: (r[ni] || `商品${i + 1}`).trim(), value: toNumber(r[vi]), stock: toStock(r[si]),
     imageUrl: imageUrlFromCell(r[13]), tag: (r[5] || '').trim()
   })).filter(x => x.name && Number.isFinite(x.value) && x.value > 0 && Number.isFinite(x.stock) && x.stock > 0);
   inventory = mapped.filter(x => !isExcludedName(x.name) && !String(x.tag || '').normalize('NFKC').includes('ホビー'));
