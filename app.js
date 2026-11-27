@@ -162,10 +162,10 @@ function applyMapping() {
     name: (r[ni] || `商品${i + 1}`).trim(), value: toNumber(r[vi]), stock: si < 0 ? 1 : toStock(r[si]),
     imageUrl: imageUrlFromCell(r[13]), tag: (r[5] || '').trim()
   })).filter(x => x.name && Number.isFinite(x.value) && x.value > 0 && Number.isFinite(x.stock) && x.stock > 0);
-  inventory = mapped.filter(x => !isExcludedName(x.name));
+  inventory = mapped.filter(x => !isExcludedName(x.name) && !String(x.tag || '').normalize('NFKC').includes('ホビー'));
   excludedCount = mapped.length - inventory.length;
   if (!inventory.length) return alert('有効な在庫を読み込めませんでした。列の選択とデータを確認してください。');
-  $('inventorySummary').textContent = `${inventory.length}種類・合計${inventory.reduce((s,x)=>s+x.stock,0)}個の在庫を使用します（名称条件で${excludedCount}種類を除外）。`;
+  $('inventorySummary').textContent = `${inventory.length}種類・合計${inventory.reduce((s,x)=>s+x.stock,0)}個の在庫を使用します（商品名・タグ条件で${excludedCount}種類を除外）。`;
   $('searchCard').classList.remove('hidden');
   if (typeof invalidateBatch === 'function') invalidateBatch();
   $('target').focus();
@@ -391,7 +391,7 @@ $('combinationCount').addEventListener('input', () => {
       const ac = counts(a), bc = counts(b);
       return bc[0] / (1 + 4 * b.gap) - ac[0] / (1 + 4 * a.gap) || a.gap - b.gap || bc.reduce((x,y)=>x+y,0) / bc.length - ac.reduce((x,y)=>x+y,0) / ac.length || a.ids.length - b.ids.length || a.gap - b.gap || b.sum - a.sum;
     };
-    const initialStock = products.map(p => p.stock);
+    const initialStock = products.map(p => String(p.tag || '').normalize('NFKC').includes('ホビー') ? 0 : p.stock);
     let candidateLimited = false;
     const candidates = people.map(person => {
       const found = [], valid = sum => sum * 100 >= person.target * percent && sum * 100 < person.target * (percent + 1);
@@ -500,6 +500,7 @@ $('combinationCount').addEventListener('input', () => {
       if (!combo || new Set(combo.ids).size !== combo.ids.length) throw new Error('選択した候補を確認してください。');
       const names = combo.ids.map(id => result.products[id]?.name.normalize('NFKC').trim());
       if (names.includes(undefined) || new Set(names).size !== names.length) throw new Error('同じ商品は1人につき1枚までです。');
+      if (combo.ids.some(id => String(result.products[id]?.tag || '').normalize('NFKC').includes('ホビー'))) throw new Error('ホビータグの商品は組み合わせに使えません。');
       const sum = combo.ids.reduce((total, id) => total + result.products[id].value, 0);
       if (sum !== combo.sum || sum * 100 < person.target * result.percent || sum * 100 >= person.target * (result.percent + 1)) throw new Error('選択した候補の相場範囲を確認してください。');
       combo.ids.forEach(id => used[id]++); selected.push({ ...person, combo });
